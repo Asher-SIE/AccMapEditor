@@ -3,7 +3,8 @@ import wx.grid as gridlib
 import json
 import copy
 
-# ========== 瓦片定义 ==========
+# ========== 瓦片类型定义 ==========
+# 定义瓦片ID与对应名称的映射关系，作为默认瓦片类型
 TILE_DEFINITIONS = {
     0: "空地",
     1: "墙壁",
@@ -14,413 +15,605 @@ TILE_DEFINITIONS = {
 }
 
 # ========== 全局剪贴板 ==========
-CLIPBOARD = None  # 存储 [[row], [row], ...] 的二维列表
+# 用于存储复制的地图区域数据，格式为二维列表 [[row1], [row2], ...]
+CLIPBOARD = None  
 
 
-
+# ========== 瓦片选择对话框 ==========
 class TileSelectionDialog(wx.Dialog):
+    """瓦片选择对话框，用于选择要放置的瓦片类型"""
     def __init__(self, parent, tile_defs):
+        """
+        初始化对话框
+        :param parent: 父窗口对象
+        :param tile_defs: 瓦片类型定义字典 {ID: 名称}
+        """
         super().__init__(parent, title="选择瓦片")
+        # 创建垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
+        # 构建列表框选项（按ID排序），格式为 "ID: 名称"
         choices = [f"{k}: {v}" for k, v in sorted(tile_defs.items())]
+        # 创建列表框并设置默认选中第一项
         self.listbox = wx.ListBox(self, choices=choices)
         self.listbox.SetSelection(0)
+        # 将列表框添加到布局，占满空间并设置边距
         sizer.Add(self.listbox, 1, wx.ALL | wx.EXPAND, 10)
+        # 创建确定/取消按钮栏
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
+        # 设置对话框布局
         self.SetSizer(sizer)
+        # 设置列表框为焦点控件
         self.listbox.SetFocus()
+        # 存储排序后的瓦片ID列表，用于后续获取选中项ID
         self.tile_keys = list(sorted(tile_defs.keys()))
 
-
     def GetSelectedTileId(self):
+        """
+        获取选中的瓦片ID
+        :return: 选中的瓦片ID，未选中时返回0
+        """
         sel = self.listbox.GetSelection()
         if sel != wx.NOT_FOUND:
             return self.tile_keys[sel]
         return 0
 
 
+# ========== 地图尺寸调整对话框 ==========
 class ResizeDialog(wx.Dialog):
+    """地图尺寸调整对话框，用于修改地图的宽度和高度"""
     def __init__(self, parent, current_w, current_h):
+        """
+        初始化对话框
+        :param parent: 父窗口对象
+        :param current_w: 当前地图宽度
+        :param current_h: 当前地图高度
+        """
         super().__init__(parent, title="调整地图尺寸")
+        # 创建垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # 宽度输入行
         w_sizer = wx.BoxSizer(wx.HORIZONTAL)
         w_sizer.Add(wx.StaticText(self, label="宽度:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        # 创建数值选择框，范围1-1000，默认值为当前宽度
         self.width_ctrl = wx.SpinCtrl(self, value=str(current_w), min=1, max=1000)
         w_sizer.Add(self.width_ctrl, 0)
         sizer.Add(w_sizer, 0, wx.ALL, 5)
 
+        # 高度输入行
         h_sizer = wx.BoxSizer(wx.HORIZONTAL)
         h_sizer.Add(wx.StaticText(self, label="高度:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        # 创建数值选择框，范围1-1000，默认值为当前高度
         self.height_ctrl = wx.SpinCtrl(self, value=str(current_h), min=1, max=1000)
         h_sizer.Add(self.height_ctrl, 0)
         sizer.Add(h_sizer, 0, wx.ALL, 5)
 
+        # 创建确定/取消按钮栏
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
+        # 设置对话框布局
         self.SetSizer(sizer)
 
-
     def get_size(self):
+        """
+        获取用户输入的新尺寸
+        :return: (新宽度, 新高度)
+        """
         return self.width_ctrl.GetValue(), self.height_ctrl.GetValue()
 
 
+# ========== 自定义瓦片类型对话框 ==========
 class CustomTileDialog(wx.Dialog):
+    """自定义瓦片类型对话框，用于编辑/添加瓦片ID和名称映射"""
     def __init__(self, parent, tile_defs):
+        """
+        初始化对话框
+        :param parent: 父窗口对象
+        :param tile_defs: 当前瓦片类型定义字典 {ID: 名称}
+        """
         super().__init__(parent, title="自定义瓦片类型")
+        # 存储瓦片ID和名称输入框的列表 [(id_ctrl, name_ctrl), ...]
         self.tile_entries = []
+        # 创建垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
+        # 添加提示文本
         sizer.Add(wx.StaticText(self, label="格式: ID 名称 (例如: 0 空地)"), 0, wx.ALL, 5)
 
+        # 遍历现有瓦片类型，创建对应的输入行
         for tile_id, name in sorted(tile_defs.items()):
             row = wx.BoxSizer(wx.HORIZONTAL)
+            # ID输入框（固定宽度60）
             id_ctrl = wx.TextCtrl(self, value=str(tile_id), size=(60, -1))
+            # 名称输入框（自适应宽度）
             name_ctrl = wx.TextCtrl(self, value=name)
             row.Add(id_ctrl, 0, wx.RIGHT, 5)
             row.Add(name_ctrl, 1)
             sizer.Add(row, 0, wx.EXPAND | wx.ALL, 2)
+            # 将输入框对添加到列表
             self.tile_entries.append((id_ctrl, name_ctrl))
 
+        # 添加"添加新瓦片"按钮
         btn_add = wx.Button(self, label="添加新瓦片")
         btn_add.Bind(wx.EVT_BUTTON, self.on_add_tile)
         sizer.Add(btn_add, 0, wx.ALL, 5)
 
+        # 创建确定/取消按钮栏
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
+        # 设置对话框布局
         self.SetSizer(sizer)
 
-
     def on_add_tile(self, event):
+        """
+        点击"添加新瓦片"按钮的事件处理函数
+        :param event: 按钮点击事件对象
+        """
+        # 创建新的输入行
         row = wx.BoxSizer(wx.HORIZONTAL)
+        # 默认ID为6，名称为"新瓦片"
         id_ctrl = wx.TextCtrl(self, value="6", size=(60, -1))
         name_ctrl = wx.TextCtrl(self, value="新瓦片")
         row.Add(id_ctrl, 0, wx.RIGHT, 5)
         row.Add(name_ctrl, 1)
+        # 将新行插入到布局中（在添加按钮上方）
         self.GetSizer().Insert(len(self.tile_entries) + 1, row, 0, wx.EXPAND | wx.ALL, 2)
+        # 将新输入框对添加到列表
         self.tile_entries.append((id_ctrl, name_ctrl))
+        # 刷新布局
         self.Layout()
 
-
     def get_tile_definitions(self):
+        """
+        获取编辑后的瓦片类型定义
+        :return: 新的瓦片类型字典 {ID: 名称}（过滤无效输入）
+        """
         defs = {}
         for id_ctrl, name_ctrl in self.tile_entries:
             try:
+                # 尝试将ID转为整数
                 tile_id = int(id_ctrl.GetValue())
+                # 获取名称并去除首尾空格
                 name = name_ctrl.GetValue().strip()
+                # 名称非空时才添加到字典
                 if name:
                     defs[tile_id] = name
             except ValueError:
+                # ID无法转为整数时跳过
                 continue
         return defs
 
 
 # ========== 主窗口 ==========
 class MapEditorFrame(wx.Frame):
+    """地图编辑器主窗口类"""
     def __init__(self):
+        """初始化主窗口"""
         super().__init__(None, title="无障碍地图编辑器", size=(900, 700))
         
-        self.width = 200
-        self.height = 200
+        # 初始化地图参数
+        self.width = 200          # 地图宽度（列数）
+        self.height = 200         # 地图高度（行数）
+        # 初始化地图数据：二维列表，所有格子默认值为0（空地）
         self.map_data = [[0 for _ in range(self.width)] for _ in range(self.height)]
-        self.cursor_x = 0
-        self.cursor_y = 0
+        self.cursor_x = 0         # 当前光标所在列
+        self.cursor_y = 0         # 当前光标所在行
+        # 复制默认瓦片类型定义，避免修改原字典
         self.tile_definitions = TILE_DEFINITIONS.copy()
 
-        # 区域选择
-        self.selection_start = None  # (x, y)
-        self.selection_end = None    # (x, y)
+        # 区域选择相关变量
+        self.selection_start = None  # 选区起始坐标 (x, y)
+        self.selection_end = None    # 选区结束坐标 (x, y)
 
+        # 初始化UI和菜单
         self.init_ui()
         self.create_menu()
+        # 更新状态栏信息
         self.update_status()
 
-
     def init_ui(self):
+        """初始化用户界面"""
+        # 创建主面板
         panel = wx.Panel(self)
+        # 创建垂直布局管理器
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 状态栏
+        # 状态栏标签（显示光标位置、瓦片信息、选区等）
         self.status_label = wx.StaticText(panel, label="")
         main_sizer.Add(self.status_label, 0, wx.ALL, 5)
 
-        # Grid
+        # 创建网格控件（用于显示地图）
         self.grid = gridlib.Grid(panel)
+        # 创建指定行列数的网格
         self.grid.CreateGrid(self.height, self.width)
+        # 禁用网格单元格直接编辑
         self.grid.EnableEditing(False)
+        # 设置单元格内容居中对齐
         self.grid.SetDefaultCellAlignment(wx.ALIGN_CENTER, wx.ALIGN_CENTER)
+        # 设置行标签宽度
         self.grid.SetRowLabelSize(40)
+        # 设置列标签高度
         self.grid.SetColLabelSize(30)
         
-        # 绑定事件
+        # 绑定事件：键盘按键按下
         self.grid.Bind(wx.EVT_KEY_DOWN, self.on_key_down)
+        # 绑定事件：网格单元格选中
         self.grid.Bind(gridlib.EVT_GRID_SELECT_CELL, self.on_grid_select)
 
+        # 将网格添加到布局（占满剩余空间）
         main_sizer.Add(self.grid, 1, wx.EXPAND | wx.ALL, 5)
+        # 设置面板布局
         panel.SetSizer(main_sizer)
+        # 设置网格为焦点控件
         self.grid.SetFocus()
 
-
     def create_menu(self):
+        """创建菜单栏"""
+        # 创建菜单栏对象
         menubar = wx.MenuBar()
+        
+        # 文件菜单
         file_menu = wx.Menu()
+        # 添加"保存为Tiled JSON"菜单项（快捷键Ctrl+S）
         save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
+        # 添加"调整地图尺寸"菜单项（快捷键Ctrl+R）
         resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\tCtrl+R")
+        
+        # 编辑菜单
         edit_menu = wx.Menu()
+        # 添加"自定义瓦片类型"菜单项
         custom_tile_item = edit_menu.Append(wx.ID_ANY, "自定义瓦片类型...")
+        
+        # 将菜单添加到菜单栏
         menubar.Append(file_menu, "文件")
         menubar.Append(edit_menu, "编辑")
+        # 设置窗口菜单栏
         self.SetMenuBar(menubar)
 
-        self.Bind(wx.EVT_MENU, self.on_save, save_item)
-        self.Bind(wx.EVT_MENU, self.on_resize, resize_item)
-        self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)
+        # 绑定菜单项事件
+        self.Bind(wx.EVT_MENU, self.on_save, save_item)          # 保存事件
+        self.Bind(wx.EVT_MENU, self.on_resize, resize_item)      # 调整尺寸事件
+        self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)  # 自定义瓦片事件
+        # 绑定全局键盘钩子（处理快捷键）
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
-
     def on_global_key(self, event):
+        """
+        全局键盘事件处理（快捷键）
+        :param event: 键盘事件对象
+        """
         key = event.GetKeyCode()
+        # 处理Ctrl组合键
         if event.ControlDown():
-            if key == ord('S'):
+            if key == ord('S'):          # Ctrl+S：保存
                 self.on_save(None)
                 return
-            elif key == ord('R'):
+            elif key == ord('R'):        # Ctrl+R：调整尺寸
                 self.on_resize(None)
                 return
-            elif key == ord('C'):
+            elif key == ord('C'):        # Ctrl+C：复制选区
                 self.copy_selection()
                 return
-            elif key == ord('V'):
+            elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard()
                 return
+        # 处理删除/退格键：清空选区/当前单元格
         elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
             self.clear_selection()
             return
+        # 未处理的按键继续传递
         event.Skip()
 
-
     def on_resize(self, event):
+        """
+        调整地图尺寸事件处理
+        :param event: 事件对象
+        """
+        # 创建尺寸调整对话框（传入当前尺寸）
         dlg = ResizeDialog(self, self.width, self.height)
+        # 用户点击确定
         if dlg.ShowModal() == wx.ID_OK:
+            # 获取新尺寸
             new_w, new_h = dlg.get_size()
+            # 验证尺寸有效性
             if new_w <= 0 or new_h <= 0:
                 wx.MessageBox("尺寸必须大于0", "错误", wx.OK | wx.ICON_ERROR)
                 return
 
+            # 保存旧地图数据
             old_data = self.map_data
+            # 更新地图尺寸
             self.width, self.height = new_w, new_h
+            # 初始化新地图数据（默认值0）
             self.map_data = [[0 for _ in range(new_w)] for _ in range(new_h)]
 
+            # 将旧数据复制到新地图（仅复制重叠区域）
             for y in range(min(len(old_data), new_h)):
                 for x in range(min(len(old_data[0]), new_w)):
                     self.map_data[y][x] = old_data[y][x]
 
-            # 刷新 Grid
-            self.grid.ClearGrid()
-            self.grid.DeleteRows(0, self.grid.GetNumberRows())
-            self.grid.DeleteCols(0, self.grid.GetNumberCols())
-            self.grid.AppendRows(new_h)
-            self.grid.AppendCols(new_w)
+            # 刷新网格控件
+            self.grid.ClearGrid()                          # 清空现有内容
+            self.grid.DeleteRows(0, self.grid.GetNumberRows())  # 删除所有行
+            self.grid.DeleteCols(0, self.grid.GetNumberCols())  # 删除所有列
+            self.grid.AppendRows(new_h)                    # 添加新行
+            self.grid.AppendCols(new_w)                    # 添加新列
 
+            # 修正光标位置（防止超出新边界）
             self.cursor_x = min(self.cursor_x, new_w - 1)
             self.cursor_y = min(self.cursor_y, new_h - 1)
+            # 选中光标所在单元格
             self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
+            # 更新状态栏
             self.update_status()
+        # 销毁对话框
         dlg.Destroy()
-
 
     def on_custom_tiles(self, event):
+        """
+        自定义瓦片类型事件处理
+        :param event: 事件对象
+        """
+        # 创建自定义瓦片对话框（传入当前瓦片定义）
         dlg = CustomTileDialog(self, self.tile_definitions)
+        # 用户点击确定
         if dlg.ShowModal() == wx.ID_OK:
+            # 更新瓦片类型定义
             self.tile_definitions = dlg.get_tile_definitions()
+        # 销毁对话框
         dlg.Destroy()
 
-
     def update_status(self):
+        """更新状态栏信息（光标位置、瓦片信息、选区）"""
+        # 获取当前光标位置的瓦片ID
         tile_id = self.map_data[self.cursor_y][self.cursor_x]
+        # 获取瓦片名称（未知ID显示"未知(ID)"）
         tile_name = self.tile_definitions.get(tile_id, f"未知({tile_id})")
+        # 基础坐标信息
         coord_info = f"位置: ({self.cursor_x}, {self.cursor_y})"
+        # 有选区时添加选区信息
         if self.selection_start and self.selection_end:
             x1, y1 = self.selection_start
             x2, y2 = self.selection_end
             coord_info += f" | 选区: ({x1},{y1})-({x2},{y2})"
+        # 设置状态栏文本
         self.status_label.SetLabel(f"{coord_info} | 瓦片: {tile_name}")
+        # 刷新状态栏显示
         self.status_label.Refresh()
+        # 强制刷新UI
         wx.Yield() 
 
-
     def on_key_down(self, event):
+        """
+        网格键盘按键事件处理
+        :param event: 键盘事件对象
+        """
         key = event.GetKeyCode()
         modifiers = event.GetModifiers()
-        moved = False
+        moved = False  # 标记是否移动了光标
 
-        # 方向键移动
+        # 方向键移动光标
         if key in [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]:
             old_x, old_y = self.cursor_x, self.cursor_y
-            if key == wx.WXK_LEFT and self.cursor_x > 0:
+            if key == wx.WXK_LEFT and self.cursor_x > 0:          # 左方向键
                 self.cursor_x -= 1; moved = True
-            elif key == wx.WXK_RIGHT and self.cursor_x < self.width - 1:
+            elif key == wx.WXK_RIGHT and self.cursor_x < self.width - 1:  # 右方向键
                 self.cursor_x += 1; moved = True
-            elif key == wx.WXK_UP and self.cursor_y > 0:
+            elif key == wx.WXK_UP and self.cursor_y > 0:          # 上方向键
                 self.cursor_y -= 1; moved = True
-            elif key == wx.WXK_DOWN and self.cursor_y < self.height - 1:
+            elif key == wx.WXK_DOWN and self.cursor_y < self.height - 1:  # 下方向键
                 self.cursor_y += 1; moved = True
 
+            # 光标移动后更新选中状态和状态栏
             if moved:
                 self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
                 self.update_status()
                 return
 
-        # 区域选择
+        # 回车键处理（选区/设置瓦片）
         elif key == wx.WXK_RETURN:
-            if modifiers == wx.MOD_SHIFT:
+            if modifiers == wx.MOD_SHIFT:                         # Shift+Enter：设置选区起始点
                 self.selection_start = (self.cursor_x, self.cursor_y)
                 self.update_status()
                 return
-            elif modifiers == wx.MOD_CONTROL:
+            elif modifiers == wx.MOD_CONTROL:                     # Ctrl+Enter：设置选区结束点
                 self.selection_end = (self.cursor_x, self.cursor_y)
                 self.update_status()
                 return
-            else:
+            else:                                                 # 普通Enter：设置当前单元格瓦片
                 self.on_set_tile(None)
                 return
 
+        # 未处理的按键继续传递
         event.Skip()
-
 
     def on_grid_select(self, event):
+        """
+        网格单元格选中事件处理
+        :param event: 网格选中事件对象
+        """
+        # 更新光标坐标为选中的单元格坐标
         self.cursor_y = event.GetRow()
         self.cursor_x = event.GetCol()
+        # 更新状态栏
         self.update_status()
+        # 事件继续传递
         event.Skip()
 
-
     def on_set_tile(self, event):
+        """
+        设置当前单元格瓦片类型
+        :param event: 事件对象
+        """
+        # 创建瓦片选择对话框
         dlg = TileSelectionDialog(self, self.tile_definitions)
+        # 用户点击确定
         if dlg.ShowModal() == wx.ID_OK:
+            # 获取选中的瓦片ID
             tile_id = dlg.GetSelectedTileId()
+            # 更新地图数据
             self.map_data[self.cursor_y][self.cursor_x] = tile_id
+            # 更新网格显示
             self.grid.SetCellValue(self.cursor_y, self.cursor_x, str(tile_id))
+            # 更新状态栏
             self.update_status()
+        # 销毁对话框
         dlg.Destroy()
-
 
     # ====== 区域操作 ======
     def get_selection_bounds(self):
+        """
+        获取选区的边界坐标
+        :return: (left, top, right, bottom) 或 None（无选区）
+        """
         if not self.selection_start or not self.selection_end:
             return None
         x1, y1 = self.selection_start
         x2, y2 = self.selection_end
+        # 计算选区的最小/最大坐标（确保left<=right，top<=bottom）
         left = min(x1, x2); right = max(x1, x2)
         top = min(y1, y2); bottom = max(y1, y2)
         return left, top, right, bottom
 
-
     def copy_selection(self):
+        """复制选中区域的地图数据到剪贴板"""
+        # 获取选区边界
         bounds = self.get_selection_bounds()
         if not bounds:
+            # 无选区时提示用户
             wx.MessageBox("请先用 Shift+Enter 和 Ctrl+Enter 选择区域", "提示", wx.OK)
             return
         left, top, right, bottom = bounds
         global CLIPBOARD
+        # 初始化剪贴板
         CLIPBOARD = []
+        # 复制选区数据到剪贴板
         for y in range(top, bottom + 1):
             row = []
             for x in range(left, right + 1):
                 row.append(self.map_data[y][x])
             CLIPBOARD.append(row)
+        # 更新状态栏
         self.update_status()
-        print("已复制区域")  # 实际可通过 status_label 显示
-
+        print("已复制区域")  # 调试信息（可替换为状态栏显示）
 
     def clear_selection(self):
+        """清空选中区域（或当前单元格）的瓦片数据（设为0）"""
+        # 获取选区边界
         bounds = self.get_selection_bounds()
         if not bounds:
-            # 如果没选区，只清当前格子
+            # 无选区时清空当前单元格
             self.map_data[self.cursor_y][self.cursor_x] = 0
             self.grid.SetCellValue(self.cursor_y, self.cursor_x, "0")
         else:
+            # 有选区时清空整个选区
             left, top, right, bottom = bounds
             for y in range(top, bottom + 1):
                 for x in range(left, right + 1):
                     self.map_data[y][x] = 0
                     self.grid.SetCellValue(y, x, "0")
+        # 更新状态栏
         self.update_status()
 
-
     def paste_clipboard(self):
+        """将剪贴板中的数据粘贴到当前光标位置"""
         global CLIPBOARD
+        # 剪贴板为空时提示
         if CLIPBOARD is None:
             wx.MessageBox("剪贴板为空", "提示", wx.OK)
             return
+        # 获取剪贴板数据的尺寸
         paste_h = len(CLIPBOARD)
         paste_w = len(CLIPBOARD[0]) if paste_h > 0 else 0
 
+        # 检查粘贴区域是否超出地图边界
         if self.cursor_y + paste_h > self.height or self.cursor_x + paste_w > self.width:
             wx.MessageBox("粘贴区域超出地图边界", "错误", wx.OK | wx.ICON_ERROR)
             return
 
+        # 粘贴数据到地图
         for dy, row in enumerate(CLIPBOARD):
             for dx, tile_id in enumerate(row):
                 y = self.cursor_y + dy
                 x = self.cursor_x + dx
                 self.map_data[y][x] = tile_id
                 self.grid.SetCellValue(y, x, str(tile_id))
+        # 更新状态栏
         self.update_status()
 
-
-    # ====== 保存 ======
+    # ====== 保存功能 ======
     def on_save(self, event):
+        """
+        保存地图事件处理
+        :param event: 事件对象
+        """
+        # 创建文件保存对话框（仅支持JSON格式）
         with wx.FileDialog(
             self, "保存地图", wildcard="Tiled JSON (*.json)|*.json",
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT
         ) as dlg:
+            # 用户选择文件并点击确定
             if dlg.ShowModal() == wx.ID_OK:
+                # 保存为Tiled格式的JSON文件
                 self.save_to_tiled_json(dlg.GetPath())
 
-
     def save_to_tiled_json(self, filepath):
+        """
+        将地图数据保存为Tiled编辑器兼容的JSON格式
+        :param filepath: 保存文件路径
+        """
+        # 将二维地图数据转为一维列表（Tiled格式要求：行优先）
         data = []
         for y in range(self.height):
             for x in range(self.width):
                 data.append(self.map_data[y][x])
 
+        # 构建Tiled JSON格式数据
         tiled_json = {
-            "width": self.width,
-            "height": self.height,
-            "layers": [{
-                "data": data,
-                "name": "Ground",
-                "width": self.width,
-                "height": self.height,
-                "opacity": 1,
-                "type": "tilelayer",
-                "visible": True
+            "width": self.width,                  # 地图宽度
+            "height": self.height,                # 地图高度
+            "layers": [{                          # 图层列表
+                "data": data,                     # 瓦片数据（一维）
+                "name": "Ground",                 # 图层名称
+                "width": self.width,              # 图层宽度
+                "height": self.height,            # 图层高度
+                "opacity": 1,                     # 不透明度
+                "type": "tilelayer",              # 图层类型（瓦片层）
+                "visible": True                   # 是否可见
             }],
-            "tilewidth": 32,
-            "tileheight": 32,
-            "orientation": "orthogonal",
-            "infinite": False,
-            "nextlayerid": 2,
-            "nextobjectid": 1,
-            "renderorder": "right-down",
-            "tiledversion": "1.10.1",
-            "version": "1.9"
+            "tilewidth": 32,                      # 瓦片宽度（像素）
+            "tileheight": 32,                     # 瓦片高度（像素）
+            "orientation": "orthogonal",          # 地图方向（正交）
+            "infinite": False,                    # 非无限地图
+            "nextlayerid": 2,                     # 下一个图层ID
+            "nextobjectid": 1,                    # 下一个对象ID
+            "renderorder": "right-down",          # 渲染顺序（从右到下）
+            "tiledversion": "1.10.1",             # Tiled版本
+            "version": "1.9"                      # JSON格式版本
         }
 
+        # 写入JSON文件（UTF-8编码，缩进2格）
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(tiled_json, f, indent=2)
+        # 提示保存成功
         wx.MessageBox(f"地图已保存至:\n{filepath}", "成功", wx.OK)
 
 
-# ========== 启动 ==========
+# ========== 应用程序启动 ==========
 class MapEditorApp(wx.App):
+    """地图编辑器应用程序类"""
     def OnInit(self):
+        """应用程序初始化"""
+        # 创建主窗口
         frame = MapEditorFrame()
+        # 显示主窗口
         frame.Show()
+        # 返回True表示初始化成功
         return True
 
+# 程序入口
 if __name__ == "__main__":
+    # 创建应用程序实例
     app = MapEditorApp()
+    # 启动应用程序主循环
     app.MainLoop()
-
-
