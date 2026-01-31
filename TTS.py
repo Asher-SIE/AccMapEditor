@@ -1,119 +1,108 @@
+import sys
 import os
 import time
 import ctypes
-from ctypes import c_int, c_void_p, c_bool, c_char_p, WINFUNCTYPE
+from ctypes import c_int, c_bool, c_void_p, c_char_p, CFUNCTYPE
 
-# ===================== 核心配置 =====================
-AISOUND_DLL_PATH = os.path.abspath("aisound.dll")
-wrapperDLL = None
-callback_func = None
+# ================= 配置部分 =================
+DLL_NAME = "aisound.dll"
+dll_path = os.path.abspath(DLL_NAME)
 
-# ===================== 类型定义 =====================
-aisound_callback_t = WINFUNCTYPE(None, c_int, c_void_p)
+if not os.path.exists(dll_path):
+    print(f"错误: 找不到 {DLL_NAME}，请确保它在当前脚本同级目录下。")
+    sys.exit(1)
+
+# ================= 加载 DLL =================
+try:
+    # 自动识别加载方式，Windows下通常是CDLL
+    aisound = ctypes.CDLL(dll_path)
+except OSError as e:
+    print(f"DLL加载失败: {e}")
+    print("请检查：1. Python版本(32/64位)是否与DLL匹配；2. 是否缺少依赖库(如VC++运行库)。")
+    sys.exit(1)
+
+# ================= 定义类型与常量 =================
+# 回调函数类型：void callback(int cmd, void* data)
+# 必须定义为 CFUNCTYPE 以防止被 Python 垃圾回收
+CALLBACK_TYPE = CFUNCTYPE(None, c_int, c_void_p)
+
 SPEECH_BEGIN = 0
 SPEECH_END = 1
 
-# ===================== 回调函数 =====================
-@aisound_callback_t
-def aisound_callback_handler(type_, cbData):
-    if type_ == SPEECH_BEGIN:
-        print(f"📢 开始合成语音 | 索引: {cbData}")
-    elif type_ == SPEECH_END:
-        print(f"📢 语音合成完成 | 索引: {cbData}")
+# ================= 设置函数签名 (ArgTypes) =================
+# 这是一个好习惯，能防止参数传递错误导致的崩溃
+aisound.aisound_initialize.restype = c_bool
+aisound.aisound_initialize.argtypes = []  # 原代码中此处无参或被忽略
 
-def Initialize():
-    """初始化DLL"""
-    global wrapperDLL, callback_func
-    
-    if not os.path.exists(AISOUND_DLL_PATH):
-        raise FileNotFoundError(f"找不到DLL: {AISOUND_DLL_PATH}")
-    
-    wrapperDLL = ctypes.CDLL(AISOUND_DLL_PATH)
-    print(f"✅ 成功加载DLL: {AISOUND_DLL_PATH}")
-    
-    # 定义函数原型
-    wrapperDLL.aisound_initialize.restype = c_bool
-    wrapperDLL.aisound_callback.restype = c_bool
-    wrapperDLL.aisound_callback.argtypes = [aisound_callback_t]
-    wrapperDLL.aisound_configure.restype = c_bool
-    wrapperDLL.aisound_configure.argtypes = [c_char_p, c_char_p]
-    wrapperDLL.aisound_speak.restype = c_bool
-    wrapperDLL.aisound_speak.argtypes = [c_char_p, c_void_p]
-    wrapperDLL.aisound_terminate.restype = c_bool
-    
-    # 初始化
-    if not wrapperDLL.aisound_initialize():
-        raise RuntimeError("❌ DLL初始化失败")
-    
-    # 注册回调
-    callback_func = aisound_callback_handler
-    if not wrapperDLL.aisound_callback(callback_func):
-        raise RuntimeError("❌ 注册回调失败")
-    
-    print("✅ DLL初始化完成")
+aisound.aisound_terminate.restype = c_bool
+aisound.aisound_terminate.argtypes = []
 
-def Configure(name, value):
+aisound.aisound_configure.restype = c_bool
+aisound.aisound_configure.argtypes = [c_char_p, c_char_p] # 键, 值
+
+aisound.aisound_speak.restype = c_bool
+# 注意：第二个参数是 void*，用于传递索引ID，我们这里简单传入整数即可
+aisound.aisound_speak.argtypes = [c_char_p, c_void_p]
+
+aisound.aisound_callback.restype = c_bool
+aisound.aisound_callback.argtypes = [CALLBACK_TYPE]
+
+# ================= Python 回调实现 =================
+def on_status_change(cmd, data):
     """
-    :param name: 配置项名称（字符串）
-    :param value: 配置值（字符串/数字）
-    :return: 是否配置成功
+    DLL 通知状态的回调
     """
-    global wrapperDLL
-    if not wrapperDLL:
-        raise RuntimeError("请先调用Initialize()初始化")
+    if cmd == SPEECH_BEGIN:
+        print(f"[回调] 开始朗读 (ID: {data})")
+    elif cmd == SPEECH_END:
+        print("[回调] 朗读结束")
+
+#以此变量保持对回调函数的引用，防止被GC回收导致崩溃
+global_callback_ref = CALLBACK_TYPE(on_status_change)
+
+# ================= 主流程 =================
+def main():
+    print("--- 初始化引擎 ---")
+    if not aisound.aisound_initialize():
+        print("初始化失败！")
+        return
+
+    print("--- 注册回调 ---")
+    # 注册我们定义的回调函数
+    aisound.aisound_callback(global_callback_ref)
+
+    print("--- 配置参数 ---")
+    # 参考 NVDA 代码，配置需转为 utf-8
+    # 常用配置：voice, rate(speed), volume, pitch
+    # 注意：某些版本的 aisound 可能需要 gbk，如果乱码请改为 gbk
+    cfg_encoding = "utf-8" 
     
-    # 统一转UTF-8字节串
-    name_bytes = name.encode("utf-8")
-    value_bytes = str(value).encode("utf-8")
+    params = {
+        "voice": "YanPing",  # 或 BabyXu
+        "volume": "100",     # 0-100 或 DLL特定范围
+        "speed": "50"        # 0-100
+    }
+
+    for k, v in params.items():
+        aisound.aisound_configure(k.encode(cfg_encoding), v.encode(cfg_encoding))
+
+    print("--- 开始朗读 ---")
+    text = "你好，这是一段去除了所有复杂逻辑的纯净测试代码。"
     
-    res = wrapperDLL.aisound_configure(name_bytes, value_bytes)
-    if res:
-        print(f"✅ 配置成功 | {name} = {value}")
+    # 这里的 1001 是自定义的 ID，会在回调里传回来
+    # text.encode 同样要注意可能是 gbk
+    success = aisound.aisound_speak(text.encode(cfg_encoding), c_void_p(1001))
+    
+    if success:
+        print("指令发送成功，正在播放...")
+        # 【关键】：因为 DLL 是异步播放的，主线程不能死，否则声音会立刻中断
+        # 我们使用死循环等待，直到大概读完，或者监听回调（简单起见这里用 sleep）
+        time.sleep(5) 
     else:
-        print(f"❌ 配置失败 | {name} = {value}（DLL不识别该参数）")
-    return res
+        print("指令发送失败 (返回 False)")
 
-def Speak(text, index=None):
-    """Speak函数"""
-    global wrapperDLL
-    if not wrapperDLL:
-        raise RuntimeError("请先调用Initialize()初始化")
-    
-    cbData = c_void_p(0 if index is None else index)
-    text_bytes = text.encode("utf-8")
-    
-    res = wrapperDLL.aisound_speak(text_bytes, cbData)
-    if res:
-        print(f"✅ 发送合成指令: {text}")
-    else:
-        raise RuntimeError(f"❌ 合成失败: {text}")
-    return res
+    print("--- 释放资源 ---")
+    aisound.aisound_terminate()
 
-def Terminate():
-    """Terminate函数"""
-    global wrapperDLL
-    if wrapperDLL:
-        wrapperDLL.aisound_terminate()
-        print("✅ DLL已终止")
-
-# 测试
 if __name__ == "__main__":
-    try:
-        Initialize()
-        
-        Configure("volume", 32767)
-        Configure("speed", 32767)
-        Configure("pitch", 0)
-        Configure("voice", "babyXu")
-        Configure("inflection", 1.11)
-        
-        Speak("你好，按原文档方式配置的参数已生效")
-        
-        # 等待播放完成
-        time.sleep(5)
-        
-    except Exception as e:
-        print(f"❌ 出错: {e}")
-    finally:
-        Terminate()
-        print("👋 程序结束")
+    main()
