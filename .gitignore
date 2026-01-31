@@ -1,0 +1,51 @@
+# 虚拟环境
+venv/
+ENV/
+env/
+
+# Python 字节码和缓存
+__pycache__/
+*.py[cod]
+* $ py.class
+
+# Jupyter Notebook 检查点
+.ipynb_checkpoints/
+
+# 配置文件
+.env
+.env.local
+.env.*.local
+
+# 日志和数据库
+*.log
+*.sqlite3
+*.db
+
+# Windows 系统文件
+
+# 资源管理器自定义设置
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 文件夹属性缓存
+[Oo]bjects/
+～ $ *
+
+ 开发工具
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ========================
+# 其他临时文件
+# ========================
+
+*.tmp
+*～
