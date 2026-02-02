@@ -196,8 +196,8 @@ class MapEditorFrame(wx.Frame):
         config_file = './tile_definitions.json'
         # 默认
         default_config = {
-            "0": "空地",
-            "1": "墙壁"
+            0: "空地",
+            1: "墙壁"
         }
 
         
