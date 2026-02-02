@@ -1,22 +1,17 @@
 import copy
 import json
+import os
 import TTS
 import wx
 import wx.grid as gridlib
 
 
-# ========== 瓦片类型定义 ==========
-TILE_DEFINITIONS = {
-    0: "空地",
-    1: "墙壁",
-    2: "水",
-    3: "草地",
-    4: "门",
-    5: "宝箱"
-}
+# 瓦片类型定义
+TILE_DEFINITIONS = {}
 
-# ========== 全局剪贴板 ==========
-# 存储复制的地图区域数据，二维列表 [[row1], [row2], ...]
+
+# 全局剪贴板
+# 二维列表 [[row1], [row2], ...]
 CLIPBOARD = None  
 
 
@@ -168,13 +163,16 @@ class MapEditorFrame(wx.Frame):
     def __init__(self):
         """初始化"""
         super().__init__(None, title="无障碍地图编辑器", size=(900, 700))
-                # 化地图参数
+                # 地图参数
         self.width = 200
         self.height = 200
         # 地图数据
         self.map_data = [[0 for _ in range(self.width)] for _ in range(self.height)]
         self.cursor_x = 0         # 当前光标所在列
         self.cursor_y = 0         # 当前光标所在行
+
+        # 加载瓦片字典 JSON
+        TILE_DEFINITIONS = self.load_tiled_data()
         # 复制默认瓦片类型定义，避免修改原字典
         self.tile_definitions = TILE_DEFINITIONS.copy()
 
@@ -188,8 +186,66 @@ class MapEditorFrame(wx.Frame):
         # 更新状态栏信息
         self.update_status()
         TTS.init_engine()
-        TTS.speak('[d]编辑器启动')
+        TTS.speak('编辑器启动')
+
+
+    def load_tiled_data(self):
+        """
+        加载瓦片配置数据
+        """
+        config_file = './tile_definitions.json'
+        # 默认
+        default_config = {
+            "0": "空地",
+            "1": "墙壁"
+        }
+
         
+        try:
+            if not os.path.exists(config_file):
+                print(f"配置文件不存在，创建新文件: {config_file}")
+                # 写入默认配置
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, ensure_ascii=False, indent=4)
+                
+                print(" 已创建默认配置文件")
+                return default_config
+            
+            # 文件存在，读取内容
+            with open(config_file, 'r', encoding='utf-8') as f:
+                print(f'📂 文件对象: {f}')
+                content = f.read()
+                
+                # 检查文件是否为空
+                if not content.strip():
+                    print("⚠️ 配置文件为空，创建默认配置")
+
+                    # 重新写入默认配置
+                    with open(config_file, 'w', encoding='utf-8') as f_write:
+                        json.dump(default_config, f_write, ensure_ascii=False, indent=4)
+                    
+                    print(" 已填充默认配置")
+                    return default_config
+                
+                # 解析JSON内容
+                TILE_DEFINITIONS = json.loads(content)
+                print(f'📖 字典对象: {TILE_DEFINITIONS}')
+                
+                # 验证配置结构
+                if not isinstance(TILE_DEFINITIONS, dict):
+                    print("⚠️ 配置文件格式错误，重置为默认配置")
+                    return
+                
+                return TILE_DEFINITIONS
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON解析错误: {e}")
+
+            return
+            
+        except Exception as e:
+            print(f"❌ 加载配置文件时发生错误: {e}")
+            return
 
 
     def init_ui(self):
@@ -280,7 +336,7 @@ class MapEditorFrame(wx.Frame):
                 return
         # 处理删除/退格键：清空选区/当前单元格
         elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
-            self.clear_selection()
+            self.delete_selection()
             return
         # 未处理的按键继续传递
         event.Skip()
@@ -348,19 +404,19 @@ class MapEditorFrame(wx.Frame):
         """更新状态栏信息（光标位置、瓦片信息、选区）"""
         # 获取当前光标位置的瓦片ID
         tile_id = self.map_data[self.cursor_y][self.cursor_x]
-        # 获取瓦片名称（未知ID显示"未知(ID)"）
+        # 获取瓦片名称
         tile_name = self.tile_definitions.get(tile_id, f"未知({tile_id})")
         # 基础坐标信息
-        coord_info = f"({self.cursor_x}, {self.cursor_y})"
+        coord_info = f"({self.cursor_x}； {self.cursor_y})"
         # 有选区时添加选区信息
         if self.selection_start and self.selection_end:
             x1, y1 = self.selection_start
             x2, y2 = self.selection_end
-            coord_info += f" | 选区: ({x1},{y1})-({x2},{y2})"
+            coord_info += f" 选区: ({x1},{y1}) 到 ({x2},{y2})"
         # 设置状态栏文本
-        self.status_label.SetLabel(f"{coord_info} | 瓦片: {tile_name}")
+        self.status_label.SetLabel(f"{coord_info} ； {tile_name}")
         TTS.cancel()
-        TTS.speak(f"{coord_info} | 瓦片: {tile_name}")
+        TTS.speak(f"{tile_name} {coord_info}")
         # 刷新状态栏显示
         self.status_label.Refresh()
         # 强制刷新UI
@@ -380,13 +436,19 @@ class MapEditorFrame(wx.Frame):
         if key in [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]:
             old_x, old_y = self.cursor_x, self.cursor_y
             if key == wx.WXK_LEFT and self.cursor_x > 0:          # 左方向键
-                self.cursor_x -= 1; moved = True
+                self.cursor_x -= 1
+                moved = True
             elif key == wx.WXK_RIGHT and self.cursor_x < self.width - 1:  # 右方向键
-                self.cursor_x += 1; moved = True
+                self.cursor_x += 1
+                moved = True
             elif key == wx.WXK_UP and self.cursor_y > 0:          # 上方向键
-                self.cursor_y -= 1; moved = True
+                self.cursor_y -= 1
+                moved = True
             elif key == wx.WXK_DOWN and self.cursor_y < self.height - 1:  # 下方向键
-                self.cursor_y += 1; moved = True
+                self.cursor_y += 1
+                moved = True
+        if key == wx.WXK_ESCAPE:
+            self.clear_selected()
 
             # 光标移动后更新选中状态和状态栏
             if moved:
@@ -399,17 +461,22 @@ class MapEditorFrame(wx.Frame):
             if modifiers == wx.MOD_SHIFT:                         # Shift+Enter：设置选区起始点
                 self.selection_start = (self.cursor_x, self.cursor_y)
                 self.update_status()
+                TTS.cancel()
+                TTS.speak('选区开始')
                 return
             elif modifiers == wx.MOD_CONTROL:                     # Ctrl+Enter：设置选区结束点
                 self.selection_end = (self.cursor_x, self.cursor_y)
                 self.update_status()
-                return
-            else:                                                 # 普通Enter：设置当前单元格瓦片
-                self.on_set_tile(None)
+                TTS.cancel()
+                TTS.speak(f'已选: {self.selection_start} 到 {self.selection_end}')
                 return
 
+            else:                                                 #设置当前单元格瓦片
+                self.on_set_tile(None)
+                return
         # 未处理的按键继续传递
         event.Skip()
+
 
     def on_grid_select(self, event):
         """
@@ -432,7 +499,6 @@ class MapEditorFrame(wx.Frame):
         """
         # 创建瓦片选择对话框
         dlg = TileSelectionDialog(self, self.tile_definitions)
-        # 用户点击确定
         if dlg.ShowModal() == wx.ID_OK:
             # 获取选中的瓦片ID
             tile_id = dlg.GetSelectedTileId()
@@ -446,7 +512,7 @@ class MapEditorFrame(wx.Frame):
         dlg.Destroy()
 
 
-    # ====== 区域操作 ======
+    # 区域操作
     def get_selection_bounds(self):
         """
         获取选区的边界坐标
@@ -457,36 +523,48 @@ class MapEditorFrame(wx.Frame):
         x1, y1 = self.selection_start
         x2, y2 = self.selection_end
         # 计算选区的最小/最大坐标（确保left<=right，top<=bottom）
-        left = min(x1, x2); right = max(x1, x2)
-        top = min(y1, y2); bottom = max(y1, y2)
+        left = min(x1, x2)
+        right = max(x1, x2)
+        top = min(y1, y2)
+        bottom = max(y1, y2)
         return left, top, right, bottom
 
 
     def copy_selection(self):
-        """复制选中区域的地图数据到剪贴板"""
+        """复制选中区域"""
+        # 初始化剪贴板
+        global CLIPBOARD
+        CLIPBOARD = []
         # 获取选区边界
         bounds = self.get_selection_bounds()
         if not bounds:
-            # 无选区时提示用户
-            wx.MessageBox("请先用 Shift+Enter 和 Ctrl+Enter 选择区域", "提示", wx.OK)
+            # 无选区时
+            CLIPBOARD.append([self.map_data[self.cursor_y][self.cursor_x]])
+            self.selection_start = None
+            self.selection_end = None
+            self.update_status()
+            TTS.cancel()
+            TTS.speak('复制')
             return
         left, top, right, bottom = bounds
-        global CLIPBOARD
-        # 初始化剪贴板
-        CLIPBOARD = []
-        # 复制选区数据到剪贴板
+
+        # 复制选区数据
         for y in range(top, bottom + 1):
             row = []
             for x in range(left, right + 1):
                 row.append(self.map_data[y][x])
             CLIPBOARD.append(row)
+
         # 更新状态栏
+        self.selection_start = None
+        self.selection_end = None
         self.update_status()
-        print("已复制区域")  # 调试信息（可替换为状态栏显示）
+        TTS.cancel()
+        TTS.speak('复制选区')
 
 
-    def clear_selection(self):
-        """清空选中区域"""
+    def delete_selection(self):
+        """清空选中单元格/区域"""
         # 获取选区边界
         bounds = self.get_selection_bounds()
         if not bounds:
@@ -502,6 +580,23 @@ class MapEditorFrame(wx.Frame):
                     self.grid.SetCellValue(y, x, "0")
         # 更新状态栏
         self.update_status()
+        self.clear_selected()
+        TTS.cancel()
+        TTS.speak('清除')
+
+
+    def clear_selected(self):
+        """ 清除选区 """
+        if not self.selection_start and not self.selection_end:
+            TTS.cancel()
+            TTS.speak('没有选区')
+            return
+
+        self.selection_start = None
+        self.selection_end = None
+        self.update_status()
+        TTS.cancel()
+        TTS.speak('已清除选区')
 
 
     def paste_clipboard(self):
@@ -509,7 +604,8 @@ class MapEditorFrame(wx.Frame):
         global CLIPBOARD
         # 剪贴板为空时提示
         if CLIPBOARD is None:
-            wx.MessageBox("剪贴板为空", "提示", wx.OK)
+            TTS.cancel()
+            TTS.speak('剪贴板为空')
             return
         # 获取剪贴板数据的尺寸
         paste_h = len(CLIPBOARD)
@@ -529,11 +625,14 @@ class MapEditorFrame(wx.Frame):
                 self.grid.SetCellValue(y, x, str(tile_id))
         # 更新状态栏
         self.update_status()
+        self.clear_selected()
+        TTS.cancel()
+        TTS.speak('粘贴')
 
 
     def on_save(self, event):
         """
-        保存地图事件处理
+        保存地图
         :param event: 事件对象
         """
         # 保存 JSON
