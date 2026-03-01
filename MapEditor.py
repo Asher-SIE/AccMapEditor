@@ -172,9 +172,11 @@ class MapEditorFrame(wx.Frame):
         self.cursor_y = 0         # 当前光标所在行
 
         # 加载瓦片字典 JSON
+        global TILE_DEFINITIONS
         TILE_DEFINITIONS = self.load_tiled_data()
         # 复制默认瓦片类型定义，避免修改原字典
         self.tile_definitions = TILE_DEFINITIONS.copy()
+        print(self.tile_definitions)
 
         # 区域选择相关变量
         self.selection_start = None  # 选区起始坐标 (x, y)
@@ -403,7 +405,8 @@ class MapEditorFrame(wx.Frame):
     def update_status(self):
         """更新状态栏信息（光标位置、瓦片信息、选区）"""
         # 获取当前光标位置的瓦片ID
-        tile_id = self.map_data[self.cursor_y][self.cursor_x]
+        tile_id = str(self.map_data[self.cursor_y][self.cursor_x])
+        print(f'id{tile_id}')
         # 获取瓦片名称
         tile_name = self.tile_definitions.get(tile_id, f"未知({tile_id})")
         # 基础坐标信息
