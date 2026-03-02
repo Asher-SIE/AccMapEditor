@@ -125,18 +125,27 @@ class CustomTileDialog(wx.Dialog):
 
     def on_add_tile(self, event):
         """
-        "添加新瓦片"按钮的事件处理
-        :param event: 按钮点击事件对象
+        按钮事件
         """
+        global TILE_DEFINITIONS
+        # 获取所有瓦片ID并排序
+        sorted_ids = sorted(int(key) for key in TILE_DEFINITIONS.keys())
+        # 计算新ID：空字典则从0开始，否则最后一个ID+1
+        if not sorted_ids:
+            new_id = 0
+        else:
+            new_id = sorted_ids[-1] + 1
+
         row = wx.BoxSizer(wx.HORIZONTAL)
-        id_ctrl = wx.TextCtrl(self, value="6", size=(60, -1))
-        name_ctrl = wx.TextCtrl(self, value="新瓦片")
+        id_ctrl = wx.TextCtrl(self, value=str(new_id), size=(60, -1))
+        name_ctrl = wx.TextCtrl(self, value='')
         row.Add(id_ctrl, 0, wx.RIGHT, 5)
         row.Add(name_ctrl, 1)
         self.GetSizer().Insert(len(self.tile_entries) + 1, row, 0, wx.EXPAND | wx.ALL, 2)
         self.tile_entries.append((id_ctrl, name_ctrl))
         # 刷新布局
         self.Layout()
+
 
     def get_tile_definitions(self):
         """
@@ -145,8 +154,8 @@ class CustomTileDialog(wx.Dialog):
         defs = {}
         for id_ctrl, name_ctrl in self.tile_entries:
             try:
-                # ID转为整数
-                tile_id = int(id_ctrl.GetValue())
+                # ID
+                tile_id = id_ctrl.GetValue()
                 # 获取名称
                 name = name_ctrl.GetValue().strip()
                 # 名称非空时才添加到字典
@@ -176,7 +185,7 @@ class MapEditorFrame(wx.Frame):
         TILE_DEFINITIONS = self.load_tiled_data()
         # 复制默认瓦片类型定义，避免修改原字典
         self.tile_definitions = TILE_DEFINITIONS.copy()
-        print(self.tile_definitions)
+        print(f'init字典{self.tile_definitions}')
 
         # 区域选择相关变量
         self.selection_start = None  # 选区起始坐标 (x, y)
@@ -398,6 +407,13 @@ class MapEditorFrame(wx.Frame):
         if dlg.ShowModal() == wx.ID_OK:
             # 更新瓦片类型定义
             self.tile_definitions = dlg.get_tile_definitions()
+        # 更新全局变量 + 保存到 tile_definitions.json
+        global TILE_DEFINITIONS
+        TILE_DEFINITIONS = self.tile_definitions.copy()
+        # 写入JSON
+        with open('./tile_definitions.json', 'w', encoding='utf-8') as f:
+            json.dump(TILE_DEFINITIONS, f, ensure_ascii=False, indent=4)
+
         # 销毁对话框
         dlg.Destroy()
 
