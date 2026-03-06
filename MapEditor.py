@@ -24,8 +24,8 @@ class TileSelectionDialog(wx.Dialog):
         super().__init__(parent, title="选择瓦片")
         # 垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
-        # 构建列表框选项
-        choices = [f"{k}: {v}" for k, v in sorted(tile_defs.items())]
+        # 构建列表框选项（按数字排序）
+        choices = [f"{k}: {v}" for k, v in sorted(tile_defs.items(), key=lambda x: int(x[0]))]
         # 选中第一项
         self.listbox = wx.ListBox(self, choices=choices)
         self.listbox.SetSelection(0)
@@ -38,8 +38,8 @@ class TileSelectionDialog(wx.Dialog):
         self.SetSizer(sizer)
         # 设置列表框为焦点控件
         self.listbox.SetFocus()
-        # 存储排序后的瓦片ID列表
-        self.tile_keys = list(sorted(tile_defs.keys()))
+        # 存储排序后的瓦片ID列表（按数字排序）
+        self.tile_keys = list(sorted(tile_defs.keys(), key=lambda x: int(x)))
 
     def GetSelectedTileId(self):
         """
@@ -88,83 +88,128 @@ class ResizeDialog(wx.Dialog):
         return self.width_ctrl.GetValue(), self.height_ctrl.GetValue()
 
 
-class CustomTileDialog(wx.Dialog):
-    """自定义瓦片类型对话框"""
+class CustomTileDialog(wx.Frame):
+    """自定义瓦片类型窗口"""
     def __init__(self, parent, tile_defs):
-        """
-        初始化对话框
-        """
-        super().__init__(parent, title="自定义瓦片类型")
-        # 存储瓦片ID和名称输入框的列表 [(id_ctrl, name_ctrl), ...]
-        self.tile_entries = []
-        # 创建垂直布局管理器
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        # 添加提示文本
-        sizer.Add(wx.StaticText(self, label="格式: ID 名称 (例如: 0 空地)"), 0, wx.ALL, 5)
+        super().__init__(parent, title="自定义瓦片类型", size=(500, 400))
+        self.tile_data = copy.deepcopy(tile_defs)
+        self.parent = parent
+        
+        self.Bind(wx.EVT_SHOW, self.on_show)
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        
+        panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 遍历现有瓦片类型，创建对应的输入行
-        for tile_id, name in sorted(tile_defs.items()):
-            row = wx.BoxSizer(wx.HORIZONTAL)
-            id_ctrl = wx.TextCtrl(self, value=str(tile_id), size=(60, -1))
-            name_ctrl = wx.TextCtrl(self, value=name)
-            row.Add(id_ctrl, 0, wx.RIGHT, 5)
-            row.Add(name_ctrl, 1)
-            sizer.Add(row, 0, wx.EXPAND | wx.ALL, 2)
-            # 将输入框对添加到列表
-            self.tile_entries.append((id_ctrl, name_ctrl))
+        main_sizer.Add(wx.StaticText(panel, label="瓦片列表（ID: 名称） &T"), 0, wx.ALL, 5)
+        self.tile_list = wx.ListBox(panel, style=wx.LB_SINGLE)
+        self.refresh_list()
+        main_sizer.Add(self.tile_list, 1, wx.EXPAND | wx.ALL, 5)
 
-        # "添加新瓦片"按钮
-        btn_add = wx.Button(self, label="添加新瓦片")
-        btn_add.Bind(wx.EVT_BUTTON, self.on_add_tile)
-        sizer.Add(btn_add, 0, wx.ALL, 5)
+        input_sizer = wx.FlexGridSizer(rows=2, cols=2, hgap=10, vgap=8)
+        input_sizer.Add(wx.StaticText(panel, label="瓦片ID："), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.id_input = wx.TextCtrl(panel)
+        input_sizer.Add(self.id_input, 1, wx.EXPAND)
 
-        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
-        sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
-        # 设置对话框布局
-        self.SetSizer(sizer)
+        input_sizer.Add(wx.StaticText(panel, label="瓦片名称："), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.name_input = wx.TextCtrl(panel)
+        input_sizer.Add(self.name_input, 1, wx.EXPAND)
+        input_sizer.AddGrowableCol(1)
+        main_sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
-    def on_add_tile(self, event):
-        """
-        按钮事件
-        """
-        global TILE_DEFINITIONS
-        # 获取所有瓦片ID并排序
-        sorted_ids = sorted(int(key) for key in TILE_DEFINITIONS.keys())
-        # 计算新ID：空字典则从0开始，否则最后一个ID+1
-        if not sorted_ids:
-            new_id = 0
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_edit = wx.Button(panel, label="编辑 &E")
+        self.btn_add = wx.Button(panel, label="添加 &A")
+        self.btn_del = wx.Button(panel, label="删除 &D")
+        self.btn_save = wx.Button(panel, label="保存并关闭 &S")
+
+        btn_sizer.Add(self.btn_edit, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_add, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_del, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_save, 1)
+        main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        panel.SetSizer(main_sizer)
+
+        self.Bind(wx.EVT_BUTTON, self.on_edit, self.btn_edit)
+        self.Bind(wx.EVT_BUTTON, self.on_add, self.btn_add)
+        self.Bind(wx.EVT_BUTTON, self.on_delete, self.btn_del)
+        self.Bind(wx.EVT_BUTTON, self.on_save, self.btn_save)
+        
+        self.update_next_id()
+
+    def on_show(self, event):
+        if event.IsShown():
+            wx.CallAfter(self.tile_list.SetFocus)
+        event.Skip()
+
+    def refresh_list(self):
+        self.tile_list.Clear()
+        sorted_items = sorted(self.tile_data.items(), key=lambda x: int(x[0]))
+        for tid, name in sorted_items:
+            self.tile_list.Append(f"{tid}: {name}")
+
+    def update_next_id(self):
+        if not self.tile_data:
+            next_id = "0"
         else:
-            new_id = sorted_ids[-1] + 1
+            max_id = max(int(k) for k in self.tile_data.keys())
+            next_id = str(max_id + 1)
+        self.id_input.SetValue(next_id)
+        self.name_input.SetValue("")
 
-        row = wx.BoxSizer(wx.HORIZONTAL)
-        id_ctrl = wx.TextCtrl(self, value=str(new_id), size=(60, -1))
-        name_ctrl = wx.TextCtrl(self, value='')
-        row.Add(id_ctrl, 0, wx.RIGHT, 5)
-        row.Add(name_ctrl, 1)
-        self.GetSizer().Insert(len(self.tile_entries) + 1, row, 0, wx.EXPAND | wx.ALL, 2)
-        self.tile_entries.append((id_ctrl, name_ctrl))
-        # 刷新布局
-        self.Layout()
+    def on_edit(self, event):
+        sel = self.tile_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要编辑的瓦片！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        text = self.tile_list.GetString(sel)
+        tid, name = text.split(":", 1)
+        self.id_input.SetValue(tid.strip())
+        self.name_input.SetValue(name.strip())
 
+    def on_add(self, event):
+        tid = self.id_input.GetValue().strip()
+        name = self.name_input.GetValue().strip()
 
-    def get_tile_definitions(self):
-        """
-        获取编辑后的瓦片类型定义
-        """
-        defs = {}
-        for id_ctrl, name_ctrl in self.tile_entries:
-            try:
-                # ID
-                tile_id = id_ctrl.GetValue()
-                # 获取名称
-                name = name_ctrl.GetValue().strip()
-                # 名称非空时才添加到字典
-                if name:
-                    defs[tile_id] = name
-            except ValueError:
-                # ID无法转为整数时跳过
-                continue
-        return defs
+        if not tid or not name:
+            wx.MessageBox("ID和名称不能为空！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # ID存在则更新，不存在则添加
+        self.tile_data[tid] = name
+        self.refresh_list()
+        self.update_next_id()
+
+    def on_delete(self, event):
+        sel = self.tile_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要删除的瓦片！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        text = self.tile_list.GetString(sel)
+        tid = text.split(":", 1)[0].strip()
+        del self.tile_data[tid]
+        self.refresh_list()
+        self.update_next_id()
+
+    def on_save(self, event):
+        with open('./tile_definitions.json', 'w', encoding='utf-8') as f:
+            json.dump(self.tile_data, f, ensure_ascii=False, indent=4)
+        wx.MessageBox("保存成功！", "提示", wx.OK)
+        self.notify_parent()
+        self.Destroy()
+
+    def on_close(self, event):
+        result = wx.MessageBox("有未保存的更改，确定要关闭吗？", "提示", wx.YES_NO | wx.ICON_QUESTION)
+        if result != wx.ID_YES:
+            event.Veto()
+            return
+        self.notify_parent()
+        self.Destroy()
+
+    def notify_parent(self):
+        self.parent.enable_and_update(self.tile_data.copy())
 
 
 class MapEditorFrame(wx.Frame):
@@ -205,10 +250,10 @@ class MapEditorFrame(wx.Frame):
         加载瓦片配置数据
         """
         config_file = './tile_definitions.json'
-        # 默认
+        # 默认配置使用字符串键
         default_config = {
-            0: "空地",
-            1: "墙壁"
+            "0": "空地",
+            "1": "墙壁"
         }
 
         
@@ -245,14 +290,14 @@ class MapEditorFrame(wx.Frame):
                 # 验证配置结构
                 if not isinstance(TILE_DEFINITIONS, dict):
                     print("⚠️ 配置文件格式错误，重置为默认配置")
-                    return
+                    return default_config
                 
-                return TILE_DEFINITIONS
+                # 确保所有键都是字符串
+                return {str(k): v for k, v in TILE_DEFINITIONS.items()}
                 
         except json.JSONDecodeError as e:
             print(f"❌ JSON解析错误: {e}")
-
-            return
+            return default_config
             
         except Exception as e:
             print(f"❌ 加载配置文件时发生错误: {e}")
@@ -400,22 +445,21 @@ class MapEditorFrame(wx.Frame):
     def on_custom_tiles(self, event):
         """
         自定义瓦片类型事件处理
-        :param event: 事件对象
+        使用子窗口模式
         """
-        # 创建自定义瓦片对话框
-        dlg = CustomTileDialog(self, self.tile_definitions)
-        if dlg.ShowModal() == wx.ID_OK:
-            # 更新瓦片类型定义
-            self.tile_definitions = dlg.get_tile_definitions()
-        # 更新全局变量 + 保存到 tile_definitions.json
-        global TILE_DEFINITIONS
-        TILE_DEFINITIONS = self.tile_definitions.copy()
-        # 写入JSON
-        with open('./tile_definitions.json', 'w', encoding='utf-8') as f:
-            json.dump(TILE_DEFINITIONS, f, ensure_ascii=False, indent=4)
+        self.Enable(False)
+        self.tile_window = CustomTileDialog(self, self.tile_definitions)
+        self.tile_window.Show()
 
-        # 销毁对话框
-        dlg.Destroy()
+    def enable_and_update(self, tile_data):
+        """
+        子窗口关闭后更新数据并重新启用主窗口
+        """
+        global TILE_DEFINITIONS
+        TILE_DEFINITIONS = tile_data
+        self.tile_definitions = tile_data.copy()
+        self.Enable(True)
+        self.Raise()
 
 
     def update_status(self):
