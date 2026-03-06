@@ -201,12 +201,9 @@ class CustomTileDialog(wx.Frame):
         self.Destroy()
 
     def on_close(self, event):
-        result = wx.MessageBox("有未保存的更改，确定要关闭吗？", "提示", wx.YES_NO | wx.ICON_QUESTION)
-        if result != wx.ID_YES:
-            event.Veto()
-            return
-        self.notify_parent()
-        self.Destroy()
+        return
+        
+
 
     def notify_parent(self):
         self.parent.enable_and_update(self.tile_data.copy())
@@ -216,7 +213,7 @@ class MapEditorFrame(wx.Frame):
     """地图编辑器主窗口类"""
     def __init__(self):
         """初始化"""
-        super().__init__(None, title="无障碍地图编辑器", size=(900, 700))
+        super().__init__(None, title="无障碍地图编辑器 V1.0", size=(900, 700))
                 # 地图参数
         self.width = 200
         self.height = 200
@@ -346,19 +343,27 @@ class MapEditorFrame(wx.Frame):
         
         # 文件菜单
         file_menu = wx.Menu()
-        # 添加"保存为Tiled JSON"菜单项（快捷键Ctrl+S）
-        save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
-        # 添加"调整地图尺寸"菜单项（快捷键Ctrl+R）
-        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\tCtrl+R")
+        save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON... &S")
+        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸... &R")
+        custom_tile_item = file_menu.Append(wx.ID_ANY, "自定义瓦片类型... &C")
+        # 添加分隔符
+        file_menu.AppendSeparator()
+        exit_item = file_menu.Append(wx.ID_EXIT, "退出")
         
         # 编辑菜单
         edit_menu = wx.Menu()
-        # 添加"自定义瓦片类型"菜单项
-        custom_tile_item = edit_menu.Append(wx.ID_ANY, "自定义瓦片类型...")
+        clear_item = edit_menu.Append(wx.ID_ANY, "清除选区\tEsc")
+        delete_item = edit_menu.Append(wx.ID_ANY, "清除单元格\tBackspace")
+        select_tile_item = edit_menu.Append(wx.ID_ANY, "选择瓦片\tEnter")
+        selection_start_item = edit_menu.Append(wx.ID_ANY, "选区开始点\tShift+Enter")
+        selection_end_item = edit_menu.Append(wx.ID_ANY, "选区结束点\tCtrl+Enter")
+        edit_menu.AppendSeparator()
+        copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
+        paste_item = edit_menu.Append(wx.ID_ANY, "粘贴\tCtrl+V")
         
         # 将菜单添加到菜单栏
-        menubar.Append(file_menu, "文件")
-        menubar.Append(edit_menu, "编辑")
+        menubar.Append(file_menu, "文件 &F")
+        menubar.Append(edit_menu, "编辑 &E")
         # 设置窗口菜单栏
         self.SetMenuBar(menubar)
 
@@ -366,6 +371,17 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_save, save_item)          # 保存事件
         self.Bind(wx.EVT_MENU, self.on_resize, resize_item)      # 调整尺寸事件
         self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)  # 自定义瓦片事件
+        self.Bind(wx.EVT_MENU, self.on_exit, exit_item)          # 退出事件
+        # 绑定编辑菜单事件
+        self.Bind(wx.EVT_MENU, self.clear_selected, clear_item)
+        self.Bind(wx.EVT_MENU, self.delete_selection, delete_item)
+        self.Bind(wx.EVT_MENU, self.on_set_tile, select_tile_item)
+        self.Bind(wx.EVT_MENU, self.on_selection_start, selection_start_item)
+        self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
+        self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
+        self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
+        # 绑定关闭事件，点击叉号最小化
+        self.Bind(wx.EVT_CLOSE, self.on_minimize)
         # 绑定全局键盘钩子（处理快捷键）
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
@@ -385,17 +401,25 @@ class MapEditorFrame(wx.Frame):
                 self.on_resize(None)
                 return
             elif key == ord('C'):        # Ctrl+C：复制选区
-                self.copy_selection()
+                self.copy_selection(None)
                 return
             elif key == ord('V'):        # Ctrl+V：粘贴选区
-                self.paste_clipboard()
+                self.paste_clipboard(None)
                 return
         # 处理删除/退格键：清空选区/当前单元格
         elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
-            self.delete_selection()
+            self.delete_selection(None)
             return
         # 未处理的按键继续传递
         event.Skip()
+
+    def on_minimize(self, event):
+        """点击关闭按钮最小化而不是退出"""
+        self.Iconize()
+
+    def on_exit(self, event):
+        """真正退出程序"""
+        self.Destroy()
 
 
     def on_resize(self, event):
@@ -448,6 +472,7 @@ class MapEditorFrame(wx.Frame):
         使用子窗口模式
         """
         self.Enable(False)
+        self.Unbind(wx.EVT_CHAR_HOOK)
         self.tile_window = CustomTileDialog(self, self.tile_definitions)
         self.tile_window.Show()
 
@@ -459,6 +484,7 @@ class MapEditorFrame(wx.Frame):
         TILE_DEFINITIONS = tile_data
         self.tile_definitions = tile_data.copy()
         self.Enable(True)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
         self.Raise()
 
 
@@ -511,7 +537,7 @@ class MapEditorFrame(wx.Frame):
                 self.cursor_y += 1
                 moved = True
         if key == wx.WXK_ESCAPE:
-            self.clear_selected()
+            self.clear_selected(None)
 
             # 光标移动后更新选中状态和状态栏
             if moved:
@@ -539,6 +565,20 @@ class MapEditorFrame(wx.Frame):
                 return
         # 未处理的按键继续传递
         event.Skip()
+
+    def on_selection_start(self, event):
+        """设置选区开始点"""
+        self.selection_start = (self.cursor_x, self.cursor_y)
+        self.update_status()
+        TTS.cancel()
+        TTS.speak('选区开始')
+
+    def on_selection_end(self, event):
+        """设置选区结束点"""
+        self.selection_end = (self.cursor_x, self.cursor_y)
+        self.update_status()
+        TTS.cancel()
+        TTS.speak(f'已选: {self.selection_start} 到 {self.selection_end}')
 
 
     def on_grid_select(self, event):
@@ -593,7 +633,7 @@ class MapEditorFrame(wx.Frame):
         return left, top, right, bottom
 
 
-    def copy_selection(self):
+    def copy_selection(self, event):
         """复制选中区域"""
         # 初始化剪贴板
         global CLIPBOARD
@@ -626,7 +666,7 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('复制选区')
 
 
-    def delete_selection(self):
+    def delete_selection(self, event):
         """清空选中单元格/区域"""
         # 获取选区边界
         bounds = self.get_selection_bounds()
@@ -643,12 +683,12 @@ class MapEditorFrame(wx.Frame):
                     self.grid.SetCellValue(y, x, "0")
         # 更新状态栏
         self.update_status()
-        self.clear_selected()
+        self.clear_selected(None)
         TTS.cancel()
         TTS.speak('清除')
 
 
-    def clear_selected(self):
+    def clear_selected(self, event):
         """ 清除选区 """
         if not self.selection_start and not self.selection_end:
             TTS.cancel()
@@ -662,7 +702,7 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('已清除选区')
 
 
-    def paste_clipboard(self):
+    def paste_clipboard(self, event):
         """剪贴板数据粘贴"""
         global CLIPBOARD
         # 剪贴板为空时提示
@@ -688,7 +728,7 @@ class MapEditorFrame(wx.Frame):
                 self.grid.SetCellValue(y, x, str(tile_id))
         # 更新状态栏
         self.update_status()
-        self.clear_selected()
+        self.clear_selected(None)
         TTS.cancel()
         TTS.speak('粘贴')
 
