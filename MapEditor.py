@@ -88,10 +88,33 @@ class ResizeDialog(wx.Dialog):
         return self.width_ctrl.GetValue(), self.height_ctrl.GetValue()
 
 
+class TileInputDialog(wx.Dialog):
+    """瓦片输入对话框"""
+    def __init__(self, parent, tile_id="", tile_name="", is_edit=False):
+        title = "编辑瓦片" if is_edit else "添加瓦片"
+        super().__init__(parent, title=title)
+        
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        sizer.Add(wx.StaticText(self, label="瓦片ID："), 0, wx.ALL, 5)
+        self.id_input = wx.TextCtrl(self, value=tile_id)
+        sizer.Add(self.id_input, 0, wx.EXPAND | wx.ALL, 5)
+        
+        sizer.Add(wx.StaticText(self, label="瓦片名称："), 0, wx.ALL, 5)
+        self.name_input = wx.TextCtrl(self, value=tile_name)
+        sizer.Add(self.name_input, 0, wx.EXPAND | wx.ALL, 5)
+        
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        
+        self.SetSizer(sizer)
+        self.id_input.SetFocus()
+
+
 class CustomTileDialog(wx.Frame):
-    """自定义瓦片类型窗口"""
+    """编辑瓦片窗口"""
     def __init__(self, parent, tile_defs):
-        super().__init__(parent, title="自定义瓦片类型", size=(500, 400))
+        super().__init__(parent, title="编辑瓦片", size=(500, 400))
         self.tile_data = copy.deepcopy(tile_defs)
         self.parent = parent
         
@@ -105,17 +128,6 @@ class CustomTileDialog(wx.Frame):
         self.tile_list = wx.ListBox(panel, style=wx.LB_SINGLE)
         self.refresh_list()
         main_sizer.Add(self.tile_list, 1, wx.EXPAND | wx.ALL, 5)
-
-        input_sizer = wx.FlexGridSizer(rows=2, cols=2, hgap=10, vgap=8)
-        input_sizer.Add(wx.StaticText(panel, label="瓦片ID："), 0, wx.ALIGN_CENTER_VERTICAL)
-        self.id_input = wx.TextCtrl(panel)
-        input_sizer.Add(self.id_input, 1, wx.EXPAND)
-
-        input_sizer.Add(wx.StaticText(panel, label="瓦片名称："), 0, wx.ALIGN_CENTER_VERTICAL)
-        self.name_input = wx.TextCtrl(panel)
-        input_sizer.Add(self.name_input, 1, wx.EXPAND)
-        input_sizer.AddGrowableCol(1)
-        main_sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.btn_edit = wx.Button(panel, label="编辑 &E")
@@ -135,8 +147,6 @@ class CustomTileDialog(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.on_add, self.btn_add)
         self.Bind(wx.EVT_BUTTON, self.on_delete, self.btn_del)
         self.Bind(wx.EVT_BUTTON, self.on_save, self.btn_save)
-        
-        self.update_next_id()
 
     def on_show(self, event):
         if event.IsShown():
@@ -149,15 +159,6 @@ class CustomTileDialog(wx.Frame):
         for tid, name in sorted_items:
             self.tile_list.Append(f"{tid}: {name}")
 
-    def update_next_id(self):
-        if not self.tile_data:
-            next_id = "0"
-        else:
-            max_id = max(int(k) for k in self.tile_data.keys())
-            next_id = str(max_id + 1)
-        self.id_input.SetValue(next_id)
-        self.name_input.SetValue("")
-
     def on_edit(self, event):
         sel = self.tile_list.GetSelection()
         if sel == wx.NOT_FOUND:
@@ -165,21 +166,30 @@ class CustomTileDialog(wx.Frame):
             return
         text = self.tile_list.GetString(sel)
         tid, name = text.split(":", 1)
-        self.id_input.SetValue(tid.strip())
-        self.name_input.SetValue(name.strip())
+        
+        dlg = TileInputDialog(self, tid.strip(), name.strip(), is_edit=True)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_id = dlg.id_input.GetValue().strip()
+            new_name = dlg.name_input.GetValue().strip()
+            if new_id and new_name:
+                if new_id != tid:
+                    del self.tile_data[tid.strip()]
+                self.tile_data[new_id] = new_name
+                self.refresh_list()
+        dlg.Destroy()
 
     def on_add(self, event):
-        tid = self.id_input.GetValue().strip()
-        name = self.name_input.GetValue().strip()
-
-        if not tid or not name:
-            wx.MessageBox("ID和名称不能为空！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-
-        # ID存在则更新，不存在则添加
-        self.tile_data[tid] = name
-        self.refresh_list()
-        self.update_next_id()
+        max_id = max([int(k) for k in self.tile_data.keys()]) if self.tile_data else -1
+        next_id = str(max_id + 1)
+        
+        dlg = TileInputDialog(self, next_id, "", is_edit=False)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_id = dlg.id_input.GetValue().strip()
+            new_name = dlg.name_input.GetValue().strip()
+            if new_id and new_name:
+                self.tile_data[new_id] = new_name
+                self.refresh_list()
+        dlg.Destroy()
 
     def on_delete(self, event):
         sel = self.tile_list.GetSelection()
@@ -191,7 +201,6 @@ class CustomTileDialog(wx.Frame):
         tid = text.split(":", 1)[0].strip()
         del self.tile_data[tid]
         self.refresh_list()
-        self.update_next_id()
 
     def on_save(self, event):
         with open('./tile_definitions.json', 'w', encoding='utf-8') as f:
@@ -201,7 +210,11 @@ class CustomTileDialog(wx.Frame):
         self.Destroy()
 
     def on_close(self, event):
-        return
+        result = wx.MessageBox("确定要退出吗？", "提示", wx.YES_NO | wx.ICON_QUESTION)
+        if result == 8:
+            return
+        self.notify_parent()
+        self.Destroy()
         
 
 
@@ -213,10 +226,11 @@ class MapEditorFrame(wx.Frame):
     """地图编辑器主窗口类"""
     def __init__(self):
         """初始化"""
-        super().__init__(None, title="无障碍地图编辑器 V1.0", size=(900, 700))
-                # 地图参数
+        super().__init__(None, title="地图编辑器 V1.0", size=(900, 700))
+        # 地图参数
         self.width = 200
         self.height = 200
+        self.current_file = None  # 当前打开的文件名
         # 地图数据
         self.map_data = [[0 for _ in range(self.width)] for _ in range(self.height)]
         self.cursor_x = 0         # 当前光标所在列
@@ -343,9 +357,11 @@ class MapEditorFrame(wx.Frame):
         
         # 文件菜单
         file_menu = wx.Menu()
-        save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON... &S")
-        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸... &R")
-        custom_tile_item = file_menu.Append(wx.ID_ANY, "自定义瓦片类型... &C")
+        open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
+        close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件 &L")
+        save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
+        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\tAlt+R")
+        custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\tAlt+C")
         # 添加分隔符
         file_menu.AppendSeparator()
         exit_item = file_menu.Append(wx.ID_EXIT, "退出")
@@ -368,9 +384,11 @@ class MapEditorFrame(wx.Frame):
         self.SetMenuBar(menubar)
 
         # 绑定菜单项事件
+        self.Bind(wx.EVT_MENU, self.on_open, open_item)             # 打开事件
         self.Bind(wx.EVT_MENU, self.on_save, save_item)          # 保存事件
         self.Bind(wx.EVT_MENU, self.on_resize, resize_item)      # 调整尺寸事件
         self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)  # 自定义瓦片事件
+        self.Bind(wx.EVT_MENU, self.on_close_file, close_item)    # 关闭文件事件
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)          # 退出事件
         # 绑定编辑菜单事件
         self.Bind(wx.EVT_MENU, self.clear_selected, clear_item)
@@ -413,13 +431,66 @@ class MapEditorFrame(wx.Frame):
         # 未处理的按键继续传递
         event.Skip()
 
+    def is_map_modified(self):
+        """检查地图是否已修改"""
+        # 检查尺寸是否改变
+        if self.width != 200 or self.height != 200:
+            return True
+        # 检查数据是否不全为0
+        for row in self.map_data:
+            for cell in row:
+                if cell != 0:
+                    return True
+        return False
+
     def on_minimize(self, event):
-        """点击关闭按钮最小化而不是退出"""
+        """点击关闭按钮最小化"""
         self.Iconize()
 
+    def on_close_file(self, event):
+        """关闭当前文件"""
+        if self.is_map_modified():
+            result = wx.MessageBox("地图有未保存的更改，是否关闭？", "提示", wx.YES_NO | wx.ICON_QUESTION)
+            print(result)
+            if result == 2:
+                print('yes按钮')
+                self.reset_to_default_map()
+            elif result == 8:
+                print('no按钮')
+                return
+
+
+    def reset_to_default_map(self):
+        """重置地图为默认大小"""
+        self.width = 200
+        self.height = 200
+        self.map_data = [[0 for _ in range(self.width)] for _ in range(self.height)]
+        self.cursor_x = 0
+        self.cursor_y = 0
+        self.selection_start = None
+        self.selection_end = None
+        self.current_file = None  # 清空当前文件名
+        # 重建网格
+        self.rebuild_grid()
+        self.update_status()
+        self.update_title()
+        TTS.speak("地图已重置")
+
     def on_exit(self, event):
-        """真正退出程序"""
+        """退出程序"""
+        if self.is_map_modified():
+            wx.MessageBox("存在为保存的修改，请先保存再退出！", "提示", wx.OK | wx.ICON_WARNING)
+            return
         self.Destroy()
+
+    def on_save_file(self):
+        """保存地图到文件（内部方法）"""
+        with wx.FileDialog(
+            self, "保存地图", wildcard="Tiled JSON (*.json)|*.json",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT
+        ) as dlg:
+            if dlg.ShowModal() == wx.ID_OK:
+                self.save_to_tiled_json(dlg.GetPath())
 
 
     def on_resize(self, event):
@@ -468,7 +539,7 @@ class MapEditorFrame(wx.Frame):
 
     def on_custom_tiles(self, event):
         """
-        自定义瓦片类型事件处理
+        编辑瓦片事件处理
         使用子窗口模式
         """
         self.Enable(False)
@@ -733,18 +804,118 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('粘贴')
 
 
+    def on_open(self, event):
+        """
+        打开地图文件
+        :param event: 事件对象
+        """
+        with wx.FileDialog(
+            self, "打开地图", wildcard="Tiled JSON (*.json)|*.json",
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST
+        ) as dlg:
+            if dlg.ShowModal() == wx.ID_OK:
+                filepath = dlg.GetPath()
+                self.current_file = filepath
+                self.load_from_tiled_json(filepath)
+                self.update_title()
+
+
+    def update_title(self):
+        """更新窗口标题"""
+        if self.current_file:
+            import os
+            filename = os.path.basename(self.current_file)
+            self.SetTitle(f"{filename} - 地图编辑器 V1.0")
+        else:
+            self.SetTitle("地图编辑器 V1.0")
+
+
+    def load_from_tiled_json(self, filepath):
+        """
+        从Tiled JSON文件加载地图数据
+        """
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # 获取地图尺寸
+            new_width = data.get('width', 0)
+            new_height = data.get('height', 0)
+            
+            if new_width == 0 or new_height == 0:
+                wx.MessageBox("无效的地图尺寸！", "错误", wx.OK | wx.ICON_ERROR)
+                return
+            
+            # 获取图层数据
+            layers = data.get('layers', [])
+            if not layers:
+                wx.MessageBox("没有找到图层数据！", "错误", wx.OK | wx.ICON_ERROR)
+                return
+            
+            layer_data = layers[0].get('data', [])
+            if not layer_data:
+                wx.MessageBox("没有找到瓦片数据！", "错误", wx.OK | wx.ICON_ERROR)
+                return
+            
+            # 将一维数组转换为二维数组（行优先）
+            self.map_data = []
+            for y in range(new_height):
+                row = []
+                for x in range(new_width):
+                    idx = y * new_width + x
+                    if idx < len(layer_data):
+                        row.append(layer_data[idx])
+                    else:
+                        row.append(0)
+                self.map_data.append(row)
+            
+            # 更新地图尺寸
+            self.width = new_width
+            self.height = new_height
+            
+            # 重建网格
+            self.rebuild_grid()
+            
+            # 更新状态栏
+            self.update_status()
+            
+            wx.MessageBox(f"成功加载地图：{new_width}x{new_height}", "提示", wx.OK)
+            TTS.speak(f"已加载地图，宽度{new_width}，高度{new_height}")
+            
+        except Exception as e:
+            wx.MessageBox(f"加载失败：{str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+
+    def rebuild_grid(self):
+        """重建网格控件"""
+        # 清空现有内容
+        self.grid.ClearGrid()
+        # 删除所有行和列
+        self.grid.DeleteRows(0, self.grid.GetNumberRows())
+        self.grid.DeleteCols(0, self.grid.GetNumberCols())
+        # 添加新的行和列
+        self.grid.AppendRows(self.height)
+        self.grid.AppendCols(self.width)
+        
+        # 填充数据
+        for y in range(self.height):
+            for x in range(self.width):
+                self.grid.SetCellValue(y, x, str(self.map_data[y][x]))
+        
+        # 重置光标位置
+        self.cursor_x = 0
+        self.cursor_y = 0
+        self.selection_start = None
+        self.selection_end = None
+        self.grid.SelectBlock(0, 0, 0, 0)
+
+
     def on_save(self, event):
         """
         保存地图
         :param event: 事件对象
         """
-        # 保存 JSON
-        with wx.FileDialog(
-            self, "保存地图", wildcard="Tiled JSON (*.json)|*.json",
-            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT
-        ) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                self.save_to_tiled_json(dlg.GetPath())
+        self.on_save_file()
 
 
     def save_to_tiled_json(self, filepath):
