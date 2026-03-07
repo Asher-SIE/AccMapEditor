@@ -25,7 +25,21 @@ class TileSelectionDialog(wx.Dialog):
         # 垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
         # 构建列表框选项（按数字排序）
-        choices = [f"{k}: {v}" for k, v in sorted(tile_defs.items(), key=lambda x: int(x[0]))]
+        choices = []
+        for k, v in sorted(tile_defs.items(), key=lambda x: int(x[0])):
+            if isinstance(v, dict):
+                name = v.get("name", "")
+                props = v.get("properties", {})
+            else:
+                name = v
+                props = {}
+            
+            # 追加属性信息
+            if props:
+                prop_str = ", ".join([f"{p_k}={p_v}" for p_k, p_v in props.items()])
+                choices.append(f"{k}: {name} ({prop_str})")
+            else:
+                choices.append(f"{k}: {name}")
         # 选中第一项
         self.listbox = wx.ListBox(self, choices=choices)
         self.listbox.SetSelection(0)
@@ -111,12 +125,80 @@ class TileInputDialog(wx.Dialog):
         self.id_input.SetFocus()
 
 
+class PropertyDialog(wx.Dialog):
+    """属性编辑对话框"""
+    def __init__(self, parent, properties=None):
+        super().__init__(parent, title="编辑属性")
+        self.properties = properties if properties else {}
+        
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        sizer.Add(wx.StaticText(self, label="属性列表："), 0, wx.ALL, 5)
+        
+        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE)
+        self.refresh_prop_list()
+        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
+        
+        input_sizer = wx.FlexGridSizer(rows=1, cols=2, hgap=5, vgap=5)
+        self.name_input = wx.TextCtrl(self, value="属性名")
+        self.value_input = wx.TextCtrl(self, value="属性值")
+        input_sizer.Add(self.name_input, 1, wx.EXPAND)
+        input_sizer.Add(self.value_input, 1, wx.EXPAND)
+        sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_add = wx.Button(self, label="添加属性")
+        btn_del = wx.Button(self, label="删除")
+        btn_ok = wx.Button(self, id=wx.ID_OK)
+        
+        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_del, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_ok, 1)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        
+        self.SetSizer(sizer)
+        self.SetSize((400, 300))
+        
+        self.Bind(wx.EVT_BUTTON, self.on_add, btn_add)
+        self.Bind(wx.EVT_BUTTON, self.on_delete, btn_del)
+    
+    def refresh_prop_list(self):
+        self.prop_list.Clear()
+        for name, value in self.properties.items():
+            self.prop_list.Append(f"{name}={value}")
+    
+    def on_add(self, event):
+        name = self.name_input.GetValue().strip()
+        value = self.value_input.GetValue().strip()
+        if not name:
+            wx.MessageBox("请输入属性名！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        self.properties[name] = value
+        self.name_input.SetValue("")
+        self.value_input.SetValue("")
+        self.refresh_prop_list()
+    
+    def on_delete(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        text = self.prop_list.GetString(sel)
+        name = text.split("=")[0]
+        del self.properties[name]
+        self.refresh_prop_list()
+    
+    def get_properties(self):
+        return self.properties
+
+
 class CustomTileDialog(wx.Frame):
     """编辑瓦片窗口"""
     def __init__(self, parent, tile_defs):
         super().__init__(parent, title="编辑瓦片", size=(500, 400))
         self.tile_data = copy.deepcopy(tile_defs)
         self.parent = parent
+        self.selected_tile_id = None
         
         self.Bind(wx.EVT_SHOW, self.on_show)
         self.Bind(wx.EVT_CLOSE, self.on_close)
@@ -133,11 +215,13 @@ class CustomTileDialog(wx.Frame):
         self.btn_edit = wx.Button(panel, label="编辑 &E")
         self.btn_add = wx.Button(panel, label="添加 &A")
         self.btn_del = wx.Button(panel, label="删除 &D")
+        self.btn_prop = wx.Button(panel, label="属性 &P")
         self.btn_save = wx.Button(panel, label="保存并关闭 &S")
 
         btn_sizer.Add(self.btn_edit, 1, wx.RIGHT, 5)
         btn_sizer.Add(self.btn_add, 1, wx.RIGHT, 5)
         btn_sizer.Add(self.btn_del, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_prop, 1, wx.RIGHT, 5)
         btn_sizer.Add(self.btn_save, 1)
         main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
@@ -146,7 +230,9 @@ class CustomTileDialog(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.on_edit, self.btn_edit)
         self.Bind(wx.EVT_BUTTON, self.on_add, self.btn_add)
         self.Bind(wx.EVT_BUTTON, self.on_delete, self.btn_del)
+        self.Bind(wx.EVT_BUTTON, self.on_property, self.btn_prop)
         self.Bind(wx.EVT_BUTTON, self.on_save, self.btn_save)
+        self.Bind(wx.EVT_LISTBOX, self.on_list_select, self.tile_list)
 
     def on_show(self, event):
         if event.IsShown():
@@ -156,25 +242,51 @@ class CustomTileDialog(wx.Frame):
     def refresh_list(self):
         self.tile_list.Clear()
         sorted_items = sorted(self.tile_data.items(), key=lambda x: int(x[0]))
-        for tid, name in sorted_items:
-            self.tile_list.Append(f"{tid}: {name}")
+        for tid, data in sorted_items:
+            if isinstance(data, dict):
+                name = data.get("name", "")
+                props = data.get("properties", {})
+            else:
+                name = data
+                props = {}
+            
+            # 追加属性信息
+            if props:
+                prop_str = ", ".join([f"{k}={v}" for k, v in props.items()])
+                display = f"{tid}: {name} ({prop_str})"
+            else:
+                display = f"{tid}: {name}"
+            
+            self.tile_list.Append(display)
+
+    def on_list_select(self, event):
+        sel = self.tile_list.GetSelection()
+        if sel != wx.NOT_FOUND:
+            text = self.tile_list.GetString(sel)
+            self.selected_tile_id = text.split(":")[0].strip()
+        event.Skip()
 
     def on_edit(self, event):
-        sel = self.tile_list.GetSelection()
-        if sel == wx.NOT_FOUND:
+        if not self.selected_tile_id:
             wx.MessageBox("请先选择要编辑的瓦片！", "提示", wx.OK | wx.ICON_WARNING)
             return
-        text = self.tile_list.GetString(sel)
-        tid, name = text.split(":", 1)
         
-        dlg = TileInputDialog(self, tid.strip(), name.strip(), is_edit=True)
+        tile_data = self.tile_data.get(self.selected_tile_id, {})
+        if isinstance(tile_data, dict):
+            tile_name = tile_data.get("name", "")
+        else:
+            tile_name = tile_data
+        
+        dlg = TileInputDialog(self, self.selected_tile_id, tile_name, is_edit=True)
         if dlg.ShowModal() == wx.ID_OK:
             new_id = dlg.id_input.GetValue().strip()
             new_name = dlg.name_input.GetValue().strip()
             if new_id and new_name:
-                if new_id != tid:
-                    del self.tile_data[tid.strip()]
-                self.tile_data[new_id] = new_name
+                old_data = self.tile_data.pop(self.selected_tile_id, {"name": "", "properties": {}})
+                if isinstance(old_data, str):
+                    old_data = {"name": old_data, "properties": {}}
+                properties = old_data.get("properties", {})
+                self.tile_data[new_id] = {"name": new_name, "properties": properties}
                 self.refresh_list()
         dlg.Destroy()
 
@@ -187,20 +299,39 @@ class CustomTileDialog(wx.Frame):
             new_id = dlg.id_input.GetValue().strip()
             new_name = dlg.name_input.GetValue().strip()
             if new_id and new_name:
-                self.tile_data[new_id] = new_name
+                self.tile_data[new_id] = {"name": new_name, "properties": {}}
                 self.refresh_list()
         dlg.Destroy()
 
     def on_delete(self, event):
-        sel = self.tile_list.GetSelection()
-        if sel == wx.NOT_FOUND:
+        if not self.selected_tile_id:
             wx.MessageBox("请先选择要删除的瓦片！", "提示", wx.OK | wx.ICON_WARNING)
             return
 
-        text = self.tile_list.GetString(sel)
-        tid = text.split(":", 1)[0].strip()
-        del self.tile_data[tid]
+        del self.tile_data[self.selected_tile_id]
+        self.selected_tile_id = None
         self.refresh_list()
+
+    def on_property(self, event):
+        if not self.selected_tile_id:
+            wx.MessageBox("请先选择要编辑属性的瓦片！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        tile_data = self.tile_data.get(self.selected_tile_id, {})
+        if isinstance(tile_data, dict):
+            properties = tile_data.get("properties", {}).copy()
+        else:
+            properties = {}
+        
+        dlg = PropertyDialog(self, properties)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_properties = dlg.get_properties()
+            if isinstance(tile_data, dict):
+                tile_data["properties"] = new_properties
+            else:
+                self.tile_data[self.selected_tile_id] = {"name": tile_data, "properties": new_properties}
+            self.refresh_list()
+        dlg.Destroy()
 
     def on_save(self, event):
         with open('./tile_definitions.json', 'w', encoding='utf-8') as f:
@@ -216,8 +347,6 @@ class CustomTileDialog(wx.Frame):
         self.notify_parent()
         self.Destroy()
         
-
-
     def notify_parent(self):
         self.parent.enable_and_update(self.tile_data.copy())
 
@@ -261,58 +390,59 @@ class MapEditorFrame(wx.Frame):
         加载瓦片配置数据
         """
         config_file = './tile_definitions.json'
-        # 默认配置使用字符串键
+        # 默认配置使用新格式
         default_config = {
-            "0": "空地",
-            "1": "墙壁"
+            "0": {"name": "空地", "properties": {}},
+            "1": {"name": "墙壁", "properties": {}}
         }
 
         
         try:
             if not os.path.exists(config_file):
                 print(f"配置文件不存在，创建新文件: {config_file}")
-                # 写入默认配置
                 with open(config_file, 'w', encoding='utf-8') as f:
                     json.dump(default_config, f, ensure_ascii=False, indent=4)
-                
                 print(" 已创建默认配置文件")
                 return default_config
             
             # 文件存在，读取内容
             with open(config_file, 'r', encoding='utf-8') as f:
-                print(f'📂 文件对象: {f}')
                 content = f.read()
                 
                 # 检查文件是否为空
                 if not content.strip():
                     print("⚠️ 配置文件为空，创建默认配置")
-
-                    # 重新写入默认配置
                     with open(config_file, 'w', encoding='utf-8') as f_write:
                         json.dump(default_config, f_write, ensure_ascii=False, indent=4)
-                    
                     print(" 已填充默认配置")
                     return default_config
                 
                 # 解析JSON内容
-                TILE_DEFINITIONS = json.loads(content)
-                print(f'📖 字典对象: {TILE_DEFINITIONS}')
+                data = json.loads(content)
                 
                 # 验证配置结构
-                if not isinstance(TILE_DEFINITIONS, dict):
+                if not isinstance(data, dict):
                     print("⚠️ 配置文件格式错误，重置为默认配置")
                     return default_config
                 
-                # 确保所有键都是字符串
-                return {str(k): v for k, v in TILE_DEFINITIONS.items()}
+                # 转换为新格式（兼容旧格式：{"0": "空地"}）
+                result = {}
+                for k, v in data.items():
+                    if isinstance(v, str):
+                        # 旧格式：{"0": "空地"} -> {"0": {"name": "空地", "properties": {}}}
+                        result[str(k)] = {"name": v, "properties": {}}
+                    else:
+                        # 新格式：{"0": {"name": "空地", "properties": {}}}
+                        result[str(k)] = v
+                
+                return result
                 
         except json.JSONDecodeError as e:
             print(f"❌ JSON解析错误: {e}")
             return default_config
-            
         except Exception as e:
             print(f"❌ 加载配置文件时发生错误: {e}")
-            return
+            return default_config
 
 
     def init_ui(self):
@@ -565,7 +695,14 @@ class MapEditorFrame(wx.Frame):
         tile_id = str(self.map_data[self.cursor_y][self.cursor_x])
         print(f'id{tile_id}')
         # 获取瓦片名称
-        tile_name = self.tile_definitions.get(tile_id, f"未知({tile_id})")
+        tile_data = self.tile_definitions.get(tile_id)
+        if tile_data:
+            if isinstance(tile_data, dict):
+                tile_name = tile_data.get("name", f"未知({tile_id})")
+            else:
+                tile_name = tile_data
+        else:
+            tile_name = f"未知({tile_id})"
         # 基础坐标信息
         coord_info = f"({self.cursor_x}； {self.cursor_y})"
         # 有选区时添加选区信息
@@ -949,7 +1086,8 @@ class MapEditorFrame(wx.Frame):
             "nextobjectid": 1,                    # 下一个对象ID
             "renderorder": "right-down",          # 渲染顺序（从右到下）
             "tiledversion": "1.10.1",             # Tiled版本
-            "version": "1.9"                      # JSON格式版本
+            "version": "1.9",                      # JSON格式版本
+            "tile_definitions": self.tile_definitions  # 瓦片定义（含属性）
         }
 
         # 写入JSON文件（UTF-8编码，缩进2格）
