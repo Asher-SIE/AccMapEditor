@@ -1,4 +1,5 @@
 import copy
+import ctypes
 import json
 import os
 import TTS
@@ -195,7 +196,7 @@ class PropertyDialog(wx.Dialog):
 class CustomTileDialog(wx.Frame):
     """编辑瓦片窗口"""
     def __init__(self, parent, tile_defs):
-        super().__init__(parent, title="编辑瓦片", size=(500, 400))
+        super().__init__(parent, title="编辑瓦片", size=(800, 600))
         self.tile_data = copy.deepcopy(tile_defs)
         self.parent = parent
         self.selected_tile_id = None
@@ -357,10 +358,20 @@ class MapEditorFrame(wx.Frame):
         """初始化"""
         # 使用样式移除系统菜单
         style = wx.DEFAULT_FRAME_STYLE & ~wx.RESIZE_BORDER & ~wx.MAXIMIZE_BOX
-        super().__init__(None, title="地图编辑器 V1.0", size=(900, 700), style=style)
+        super().__init__(None, title="地图编辑器 V1.0", size=(1366, 768), style=style)
         
-        # 绑定键盘事件阻止 Alt+空格弹出系统菜单
-        self.Bind(wx.EVT_KEY_DOWN, self.on_key_down_frame)
+        # 使用Windows API移除系统菜单（Alt+空格）- 彻底移除WS_SYSMENU样式
+        try:
+            hwnd = self.GetHandle()
+            if hwnd:
+                GWL_STYLE = -16
+                WS_SYSMENU = 0x00080000
+                current = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                new_style = current & ~WS_SYSMENU
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+                ctypes.windll.user32.DrawMenuBar(hwnd)
+        except Exception:
+            pass
         
         # 地图参数
         self.width = 200
@@ -376,8 +387,7 @@ class MapEditorFrame(wx.Frame):
         TILE_DEFINITIONS = self.load_tiled_data()
         # 复制默认瓦片类型定义，避免修改原字典
         self.tile_definitions = TILE_DEFINITIONS.copy()
-        print(f'init字典{self.tile_definitions}')
-
+        
         # 区域选择相关变量
         self.selection_start = None  # 选区起始坐标 (x, y)
         self.selection_end = None    # 选区结束坐标 (x, y)
@@ -393,10 +403,10 @@ class MapEditorFrame(wx.Frame):
 
     def load_tiled_data(self):
         """
-        加载瓦片配置数据
+        加载瓦片配置
         """
         config_file = './tile_definitions.json'
-        # 默认配置使用新格式
+        # 默认配置
         default_config = {
             "0": {"name": "空地", "properties": {}},
             "1": {"name": "墙壁", "properties": {}}
@@ -408,7 +418,7 @@ class MapEditorFrame(wx.Frame):
                 print(f"配置文件不存在，创建新文件: {config_file}")
                 with open(config_file, 'w', encoding='utf-8') as f:
                     json.dump(default_config, f, ensure_ascii=False, indent=4)
-                print(" 已创建默认配置文件")
+                print("已创建默认配置文件")
                 return default_config
             
             # 文件存在，读取内容
@@ -417,7 +427,7 @@ class MapEditorFrame(wx.Frame):
                 
                 # 检查文件是否为空
                 if not content.strip():
-                    print("⚠️ 配置文件为空，创建默认配置")
+                    print("配置文件为空，创建默认配置")
                     with open(config_file, 'w', encoding='utf-8') as f_write:
                         json.dump(default_config, f_write, ensure_ascii=False, indent=4)
                     print(" 已填充默认配置")
@@ -428,10 +438,10 @@ class MapEditorFrame(wx.Frame):
                 
                 # 验证配置结构
                 if not isinstance(data, dict):
-                    print("⚠️ 配置文件格式错误，重置为默认配置")
+                    print("配置文件格式错误，重置为默认配置")
                     return default_config
                 
-                # 转换为新格式（兼容旧格式：{"0": "空地"}）
+                # 转换为新格式
                 result = {}
                 for k, v in data.items():
                     if isinstance(v, str):
@@ -444,10 +454,10 @@ class MapEditorFrame(wx.Frame):
                 return result
                 
         except json.JSONDecodeError as e:
-            print(f"❌ JSON解析错误: {e}")
+            print(f"JSON解析错误: {e}")
             return default_config
         except Exception as e:
-            print(f"❌ 加载配置文件时发生错误: {e}")
+            print(f"加载配置文件时发生错误: {e}")
             return default_config
 
 
@@ -458,13 +468,12 @@ class MapEditorFrame(wx.Frame):
         # 创建垂直布局管理器
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 状态栏标签（显示光标位置、瓦片信息、选区等）
+        # 状态栏标签
         self.status_label = wx.StaticText(panel, label="")
         main_sizer.Add(self.status_label, 0, wx.ALL, 5)
 
         # 创建网格控件（用于显示地图）
         self.grid = gridlib.Grid(panel)
-        # 创建指定行列数的网格
         self.grid.CreateGrid(self.height, self.width)
         
         self.grid.EnableEditing(False)  # 禁用网格单元格直接编辑
@@ -494,13 +503,13 @@ class MapEditorFrame(wx.Frame):
         # 文件菜单
         file_menu = wx.Menu()
         open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
-        close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件 &L")
+        close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件\t&L")
         save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
-        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\tAlt+R")
-        custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\tAlt+C")
+        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\t&R")
+        custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\t&C")
         # 添加分隔符
         file_menu.AppendSeparator()
-        exit_item = file_menu.Append(wx.ID_EXIT, "退出")
+        exit_item = file_menu.Append(wx.ID_EXIT, "退出\t&X")
         
         # 编辑菜单
         edit_menu = wx.Menu()
@@ -539,12 +548,6 @@ class MapEditorFrame(wx.Frame):
         # 绑定全局键盘钩子（处理快捷键）
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
-    def on_key_down_frame(self, event):
-        """阻止 Alt+空格 弹出系统菜单"""
-        key = event.GetKeyCode()
-        if key == wx.WXK_SPACE and event.AltDown():
-            return  # 忽略 Alt+空格
-        event.Skip()
 
     def on_global_key(self, event):
         """
@@ -593,12 +596,9 @@ class MapEditorFrame(wx.Frame):
         """关闭当前文件"""
         if self.is_map_modified():
             result = wx.MessageBox("地图有未保存的更改，是否关闭？", "提示", wx.YES_NO | wx.ICON_QUESTION)
-            print(result)
             if result == 2:
-                print('yes按钮')
                 self.reset_to_default_map()
             elif result == 8:
-                print('no按钮')
                 return
 
 
@@ -705,7 +705,6 @@ class MapEditorFrame(wx.Frame):
         """更新状态栏信息（光标位置、瓦片信息、选区）"""
         # 获取当前光标位置的瓦片ID
         tile_id = str(self.map_data[self.cursor_y][self.cursor_x])
-        print(f'id{tile_id}')
         # 获取瓦片名称
         tile_data = self.tile_definitions.get(tile_id)
         if tile_data:
@@ -1112,6 +1111,12 @@ class MapEditorApp(wx.App):
     """地图编辑器应用程序类"""
     def OnInit(self):
         """应用程序初始化"""
+        # 单实例检测
+        self.instance = wx.SingleInstanceChecker("MapEditor")
+        if self.instance.IsAnotherRunning():
+            wx.MessageBox("编辑器已在运行！", "提示", wx.OK)
+            return False
+        
         # 创建主窗口
         frame = MapEditorFrame()
         # 显示主窗口
