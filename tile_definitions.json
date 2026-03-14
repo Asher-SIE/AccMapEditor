@@ -9,5 +9,11 @@
             "属性名": "属性值",
             "accent": "true"
         }
+    },
+    "2": {
+        "name": "草地",
+        "properties": {
+            "passable": "true"
+        }
     }
 }

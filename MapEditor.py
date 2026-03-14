@@ -355,7 +355,13 @@ class MapEditorFrame(wx.Frame):
     """地图编辑器主窗口类"""
     def __init__(self):
         """初始化"""
-        super().__init__(None, title="地图编辑器 V1.0", size=(900, 700))
+        # 使用样式移除系统菜单
+        style = wx.DEFAULT_FRAME_STYLE & ~wx.RESIZE_BORDER & ~wx.MAXIMIZE_BOX
+        super().__init__(None, title="地图编辑器 V1.0", size=(900, 700), style=style)
+        
+        # 绑定键盘事件阻止 Alt+空格弹出系统菜单
+        self.Bind(wx.EVT_KEY_DOWN, self.on_key_down_frame)
+        
         # 地图参数
         self.width = 200
         self.height = 200
@@ -533,6 +539,12 @@ class MapEditorFrame(wx.Frame):
         # 绑定全局键盘钩子（处理快捷键）
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
+    def on_key_down_frame(self, event):
+        """阻止 Alt+空格 弹出系统菜单"""
+        key = event.GetKeyCode()
+        if key == wx.WXK_SPACE and event.AltDown():
+            return  # 忽略 Alt+空格
+        event.Skip()
 
     def on_global_key(self, event):
         """
