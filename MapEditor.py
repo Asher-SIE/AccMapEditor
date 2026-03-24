@@ -688,10 +688,16 @@ class MapEditorFrame(wx.Frame):
         :param event: 键盘事件对象
         """
         key = event.GetKeyCode()
-        # 处理Ctrl+Shift组合键
+        # 处理 Ctrl+Shift 组合键（优先检查）
         if event.ControlDown() and event.ShiftDown():
             if key == ord('A'):          # Ctrl+Shift+A：添加对象
                 self.on_add_object(None)
+                return
+            elif key == ord('C'):        # Ctrl+Shift+C：复制对象
+                self.copy_object(None)
+                return
+            elif key == ord('V'):        # Ctrl+Shift+V：粘贴对象
+                self.paste_object(None)
                 return
         # 处理Ctrl组合键
         if event.ControlDown():
@@ -706,14 +712,6 @@ class MapEditorFrame(wx.Frame):
                 return
             elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard(None)
-                return
-        # 处理 Ctrl+Shift 组合键
-        if event.ControlDown() and event.ShiftDown():
-            if key == ord('C'):          # Ctrl+Shift+C：复制对象
-                self.copy_object(None)
-                return
-            elif key == ord('V'):        # Ctrl+Shift+V：粘贴对象
-                self.paste_object(None)
                 return
         # 处理删除/退格键：优先删除对象，否则清除瓦片
         elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
@@ -731,11 +729,14 @@ class MapEditorFrame(wx.Frame):
         # 检查尺寸是否改变
         if self.width != 200 or self.height != 200:
             return True
-        # 检查数据是否不全为0
+        # 检查瓦片数据是否不全为0
         for row in self.map_data:
             for cell in row:
                 if cell != 0:
                     return True
+        # 检查对象层是否有对象
+        if self.object_layers and self.object_layers[0].get("objects"):
+            return True
         return False
 
     def on_minimize(self, event):
