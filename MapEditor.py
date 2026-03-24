@@ -642,6 +642,9 @@ class MapEditorFrame(wx.Frame):
         edit_object_item = object_menu.Append(wx.ID_ANY, "编辑对象...\tEnter(在对象上)")
         delete_object_item = object_menu.Append(wx.ID_ANY, "删除对象...\tDelete(在对象上)")
         object_menu.AppendSeparator()
+        copy_object_item = object_menu.Append(wx.ID_ANY, "复制对象\tCtrl+Shift+C")
+        paste_object_item = object_menu.Append(wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
+        object_menu.AppendSeparator()
         clear_all_objects_item = object_menu.Append(wx.ID_ANY, "清除所有对象")
         
         # 将菜单添加到菜单栏
@@ -670,6 +673,8 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_add_object, add_object_item)
         self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
         self.Bind(wx.EVT_MENU, self.on_delete_object, delete_object_item)
+        self.Bind(wx.EVT_MENU, self.copy_object, copy_object_item)
+        self.Bind(wx.EVT_MENU, self.paste_object, paste_object_item)
         self.Bind(wx.EVT_MENU, self.on_clear_all_objects, clear_all_objects_item)
         # 绑定关闭事件，点击叉号最小化
         self.Bind(wx.EVT_CLOSE, self.on_minimize)
@@ -702,9 +707,21 @@ class MapEditorFrame(wx.Frame):
             elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard(None)
                 return
-        # 处理删除/退格键：清空选区/当前单元格
+        # 处理 Ctrl+Shift 组合键
+        if event.ControlDown() and event.ShiftDown():
+            if key == ord('C'):          # Ctrl+Shift+C：复制对象
+                self.copy_object(None)
+                return
+            elif key == ord('V'):        # Ctrl+Shift+V：粘贴对象
+                self.paste_object(None)
+                return
+        # 处理删除/退格键：优先删除对象，否则清除瓦片
         elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
-            self.delete_selection(None)
+            obj = self.find_object_at(self.cursor_x, self.cursor_y)
+            if obj:
+                self.on_delete_object(None)
+            else:
+                self.delete_selection(None)
             return
         # 未处理的按键继续传递
         event.Skip()
@@ -1122,6 +1139,42 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('粘贴')
 
 
+    OBJECT_CLIPBOARD = None  # 对象剪贴板
+
+
+    def copy_object(self, event):
+        """复制对象"""
+        obj = self.find_object_at(self.cursor_x, self.cursor_y)
+        if not obj:
+            wx.MessageBox("当前光标位置没有对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        OBJECT_CLIPBOARD = copy.deepcopy(obj)
+        self.OBJECT_CLIPBOARD = OBJECT_CLIPBOARD
+        TTS.speak(f"已复制对象：{obj.get('name', '')}")
+
+
+    def paste_object(self, event):
+        """粘贴对象"""
+        if not hasattr(self, 'OBJECT_CLIPBOARD') or self.OBJECT_CLIPBOARD is None:
+            wx.MessageBox("对象剪贴板为空！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        new_obj = copy.deepcopy(self.OBJECT_CLIPBOARD)
+        new_obj["id"] = self.next_object_id
+        self.next_object_id += 1
+        
+        tilewidth = 32
+        tileheight = 32
+        new_obj["x"] = self.cursor_x * tilewidth
+        new_obj["y"] = self.cursor_y * tileheight
+        
+        self.object_layers[0]["objects"].append(new_obj)
+        self.rebuild_grid()
+        self.update_status()
+        TTS.speak(f"已粘贴对象：{new_obj.get('name', '')}")
+
+
     def find_object_at(self, tile_x, tile_y):
         """查找指定瓦片坐标处的对象"""
         tilewidth = 32
@@ -1201,9 +1254,8 @@ class MapEditorFrame(wx.Frame):
             return
         
         result = wx.MessageBox(f"确定要删除对象 \"{obj.get('name', '')}\" 吗？", "确认", wx.YES_NO | wx.ICON_QUESTION)
-        if result == wx.ID_YES:
-            obj_id = obj.get("id")
-            self.object_layers[0]["objects"] = [o for o in self.object_layers[0]["objects"] if o.get("id") != obj_id]
+        if result == 2:  # wx.MessageBox 返回 2 表示"是"
+            self.object_layers[0]["objects"].remove(obj)
             self.rebuild_grid()
             self.update_status()
             TTS.speak(f"已删除对象")
@@ -1212,7 +1264,7 @@ class MapEditorFrame(wx.Frame):
     def on_clear_all_objects(self, event):
         """清除所有对象"""
         result = wx.MessageBox("确定要清除所有对象吗？", "确认", wx.YES_NO | wx.ICON_QUESTION)
-        if result == wx.ID_YES:
+        if result == 2:  # wx.MessageBox 返回 2 表示"是"
             self.object_layers[0]["objects"] = []
             self.rebuild_grid()
             self.update_status()
