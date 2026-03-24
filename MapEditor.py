@@ -193,6 +193,111 @@ class PropertyDialog(wx.Dialog):
         return self.properties
 
 
+class ObjectDialog(wx.Dialog):
+    """对象编辑对话框"""
+    def __init__(self, parent, obj_data=None, is_edit=False, next_id=1):
+        title = "编辑对象" if is_edit else "添加对象"
+        super().__init__(parent, title=title)
+        
+        self.obj_data = obj_data if obj_data else {}
+        self.is_edit = is_edit
+        self.next_id = next_id
+        
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # 基本信息
+        info_sizer = wx.FlexGridSizer(rows=6, cols=2, hgap=5, vgap=5)
+        
+        info_sizer.Add(wx.StaticText(self, label="对象ID/名称："))
+        self.name_input = wx.TextCtrl(self, value=self.obj_data.get("name", ""))
+        info_sizer.Add(self.name_input, 1, wx.EXPAND)
+        
+        info_sizer.Add(wx.StaticText(self, label="对象类型："))
+        self.type_input = wx.TextCtrl(self, value=self.obj_data.get("type", ""))
+        info_sizer.Add(self.type_input, 1, wx.EXPAND)
+        
+        info_sizer.Add(wx.StaticText(self, label="X坐标(像素)："))
+        self.x_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("x", 0))), min=0, max=100000)
+        info_sizer.Add(self.x_input, 1, wx.EXPAND)
+        
+        info_sizer.Add(wx.StaticText(self, label="Y坐标(像素)："))
+        self.y_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("y", 0))), min=0, max=100000)
+        info_sizer.Add(self.y_input, 1, wx.EXPAND)
+        
+        info_sizer.Add(wx.StaticText(self, label="宽度(像素)："))
+        self.width_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("width", 32))), min=1, max=1000)
+        info_sizer.Add(self.width_input, 1, wx.EXPAND)
+        
+        info_sizer.Add(wx.StaticText(self, label="高度(像素)："))
+        self.height_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("height", 32))), min=1, max=1000)
+        info_sizer.Add(self.height_input, 1, wx.EXPAND)
+        
+        sizer.Add(info_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        
+        # 属性编辑
+        sizer.Add(wx.StaticText(self, label="自定义属性："), 0, wx.LEFT | wx.TOP, 10)
+        
+        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 80))
+        self.properties = self.obj_data.get("properties", {}).copy()
+        self.refresh_prop_list()
+        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
+        
+        prop_btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_add_prop = wx.Button(self, label="添加属性")
+        self.btn_del_prop = wx.Button(self, label="删除")
+        prop_btn_sizer.Add(self.btn_add_prop, 1, wx.RIGHT, 5)
+        prop_btn_sizer.Add(self.btn_del_prop, 1)
+        sizer.Add(prop_btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        
+        # 按钮
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        
+        self.SetSizer(sizer)
+        self.SetSize((400, 450))
+        
+        self.Bind(wx.EVT_BUTTON, self.on_add_prop, self.btn_add_prop)
+        self.Bind(wx.EVT_BUTTON, self.on_del_prop, self.btn_del_prop)
+    
+    def refresh_prop_list(self):
+        self.prop_list.Clear()
+        for name, value in self.properties.items():
+            self.prop_list.Append(f"{name}={value}")
+    
+    def on_add_prop(self, event):
+        dlg = wx.TextEntryDialog(self, "输入属性名和值（格式：name=value）", "添加属性", "")
+        if dlg.ShowModal() == wx.ID_OK:
+            text = dlg.GetValue()
+            if "=" in text:
+                name, value = text.split("=", 1)
+                self.properties[name.strip()] = value.strip()
+                self.refresh_prop_list()
+        dlg.Destroy()
+    
+    def on_del_prop(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        text = self.prop_list.GetString(sel)
+        name = text.split("=")[0]
+        del self.properties[name]
+        self.refresh_prop_list()
+    
+    def get_object_data(self):
+        obj = {
+            "id": self.obj_data.get("id", self.next_id),
+            "name": self.name_input.GetValue().strip(),
+            "type": self.type_input.GetValue().strip(),
+            "x": self.x_input.GetValue(),
+            "y": self.y_input.GetValue(),
+            "width": self.width_input.GetValue(),
+            "height": self.height_input.GetValue(),
+            "properties": self.properties
+        }
+        return obj
+
+
 class CustomTileDialog(wx.Frame):
     """编辑瓦片窗口"""
     def __init__(self, parent, tile_defs):
@@ -392,6 +497,15 @@ class MapEditorFrame(wx.Frame):
         self.selection_start = None  # 选区起始坐标 (x, y)
         self.selection_end = None    # 选区结束坐标 (x, y)
 
+        # 对象层数据
+        self.object_layers = [{
+            "type": "objectgroup",
+            "name": "Objects",
+            "objects": []
+        }]
+        self.next_object_id = 1  # 下一个对象ID
+        self.selected_object = None  # 当前选中的对象
+
         # 初始化UI和菜单
         self.init_ui()
         self.create_menu()
@@ -522,9 +636,18 @@ class MapEditorFrame(wx.Frame):
         copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
         paste_item = edit_menu.Append(wx.ID_ANY, "粘贴\tCtrl+V")
         
+        # 对象菜单
+        object_menu = wx.Menu()
+        add_object_item = object_menu.Append(wx.ID_ANY, "添加对象...\tCtrl+Shift+A")
+        edit_object_item = object_menu.Append(wx.ID_ANY, "编辑对象...\tEnter(在对象上)")
+        delete_object_item = object_menu.Append(wx.ID_ANY, "删除对象...\tDelete(在对象上)")
+        object_menu.AppendSeparator()
+        clear_all_objects_item = object_menu.Append(wx.ID_ANY, "清除所有对象")
+        
         # 将菜单添加到菜单栏
         menubar.Append(file_menu, "文件 &F")
         menubar.Append(edit_menu, "编辑 &E")
+        menubar.Append(object_menu, "对象 &O")
         # 设置窗口菜单栏
         self.SetMenuBar(menubar)
 
@@ -543,6 +666,11 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
         self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
+        # 绑定对象菜单事件
+        self.Bind(wx.EVT_MENU, self.on_add_object, add_object_item)
+        self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
+        self.Bind(wx.EVT_MENU, self.on_delete_object, delete_object_item)
+        self.Bind(wx.EVT_MENU, self.on_clear_all_objects, clear_all_objects_item)
         # 绑定关闭事件，点击叉号最小化
         self.Bind(wx.EVT_CLOSE, self.on_minimize)
         # 绑定全局键盘钩子（处理快捷键）
@@ -555,6 +683,11 @@ class MapEditorFrame(wx.Frame):
         :param event: 键盘事件对象
         """
         key = event.GetKeyCode()
+        # 处理Ctrl+Shift组合键
+        if event.ControlDown() and event.ShiftDown():
+            if key == ord('A'):          # Ctrl+Shift+A：添加对象
+                self.on_add_object(None)
+                return
         # 处理Ctrl组合键
         if event.ControlDown():
             if key == ord('S'):          # Ctrl+S：保存
@@ -612,6 +745,12 @@ class MapEditorFrame(wx.Frame):
         self.selection_start = None
         self.selection_end = None
         self.current_file = None  # 清空当前文件名
+        self.object_layers = [{
+            "type": "objectgroup",
+            "name": "Objects",
+            "objects": []
+        }]
+        self.next_object_id = 1
         # 重建网格
         self.rebuild_grid()
         self.update_status()
@@ -702,7 +841,7 @@ class MapEditorFrame(wx.Frame):
 
 
     def update_status(self):
-        """更新状态栏信息（光标位置、瓦片信息、选区）"""
+        """更新状态栏信息（光标位置、瓦片信息、选区、对象信息）"""
         # 获取当前光标位置的瓦片ID
         tile_id = str(self.map_data[self.cursor_y][self.cursor_x])
         # 获取瓦片名称
@@ -714,6 +853,22 @@ class MapEditorFrame(wx.Frame):
                 tile_name = tile_data
         else:
             tile_name = f"未知({tile_id})"
+        
+        # 检查是否有对象
+        obj = self.find_object_at(self.cursor_x, self.cursor_y)
+        obj_info = ""
+        obj_tts = ""
+        if obj:
+            obj_name = obj.get("name", "")
+            obj_type = obj.get("type", "")
+            obj_id = obj.get("id", "")
+            props = obj.get("properties", {})
+            prop_str = ""
+            if props:
+                prop_str = " " + " ".join([f"{k}={v}" for k, v in props.items()])
+            obj_info = f"[{obj_id}:{obj_name}:{obj_type}]{prop_str}"
+            obj_tts = f"[{obj_id}:{obj_name}:{obj_type}]"
+        
         # 基础坐标信息
         coord_info = f"({self.cursor_x}； {self.cursor_y})"
         # 有选区时添加选区信息
@@ -721,10 +876,21 @@ class MapEditorFrame(wx.Frame):
             x1, y1 = self.selection_start
             x2, y2 = self.selection_end
             coord_info += f" 选区: ({x1},{y1}) 到 ({x2},{y2})"
-        # 设置状态栏文本
-        self.status_label.SetLabel(f"{coord_info} ； {tile_name}")
-        TTS.cancel()
-        TTS.speak(f"{tile_name} {coord_info}")
+        
+        # 设置状态栏文本：坐标 ； 对象信息 ； 瓦片名称
+        if obj_info:
+            status_text = f"{coord_info} ； {obj_info} ； {tile_name}"
+        else:
+            status_text = f"{coord_info} ； {tile_name}"
+        self.status_label.SetLabel(status_text)
+        
+        # 只在光标移动时播报，不在编辑对象时播报
+        if not hasattr(self, '_silent_status'):
+            TTS.cancel()
+            if obj_tts:
+                TTS.speak(f"{coord_info} {obj_tts} {tile_name}")
+            else:
+                TTS.speak(f"{coord_info} {tile_name}")
         # 刷新状态栏显示
         self.status_label.Refresh()
         # 强制刷新UI
@@ -779,8 +945,12 @@ class MapEditorFrame(wx.Frame):
                 TTS.speak(f'已选: {self.selection_start} 到 {self.selection_end}')
                 return
 
-            else:                                                 #设置当前单元格瓦片
-                self.on_set_tile(None)
+            else:                                                 # 设置瓦片或编辑对象
+                obj = self.find_object_at(self.cursor_x, self.cursor_y)
+                if obj:
+                    self.on_edit_object(None)
+                else:
+                    self.on_set_tile(None)
                 return
         # 未处理的按键继续传递
         event.Skip()
@@ -952,6 +1122,103 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('粘贴')
 
 
+    def find_object_at(self, tile_x, tile_y):
+        """查找指定瓦片坐标处的对象"""
+        tilewidth = 32
+        tileheight = 32
+        pixel_x = tile_x * tilewidth
+        pixel_y = tile_y * tileheight
+        
+        for layer in self.object_layers:
+            for obj in layer.get("objects", []):
+                obj_x = obj.get("x", 0)
+                obj_y = obj.get("y", 0)
+                obj_w = obj.get("width", 32)
+                obj_h = obj.get("height", 32)
+                
+                if obj_x <= pixel_x < obj_x + obj_w and obj_y <= pixel_y < obj_y + obj_h:
+                    return obj
+        return None
+
+
+    def get_object_display_text(self, tile_x, tile_y):
+        """获取指定坐标处对象的显示文本"""
+        obj = self.find_object_at(tile_x, tile_y)
+        if obj:
+            name = obj.get("name", "")
+            obj_type = obj.get("type", "")
+            return f"[{name}:{obj_type}]"
+        return None
+
+
+    def on_add_object(self, event):
+        """添加对象"""
+        dlg = ObjectDialog(self, is_edit=False, next_id=self.next_object_id)
+        if dlg.ShowModal() == wx.ID_OK:
+            obj_data = dlg.get_object_data()
+            obj_data["id"] = self.next_object_id
+            self.next_object_id += 1
+            
+            self.object_layers[0]["objects"].append(obj_data)
+            self.rebuild_grid()
+            self.update_status()
+            TTS.speak(f"已添加对象：{obj_data.get('name', '')}")
+        dlg.Destroy()
+
+
+    def on_edit_object(self, event):
+        """编辑对象"""
+        obj = self.find_object_at(self.cursor_x, self.cursor_y)
+        if not obj:
+            wx.MessageBox("当前光标位置没有对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        self._silent_status = True
+        dlg = ObjectDialog(self, obj_data=obj, is_edit=True, next_id=self.next_object_id)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_obj_data = dlg.get_object_data()
+            new_obj_data["id"] = obj.get("id")
+            
+            for i, existing_obj in enumerate(self.object_layers[0]["objects"]):
+                if existing_obj.get("id") == obj.get("id"):
+                    self.object_layers[0]["objects"][i] = new_obj_data
+                    break
+            
+            self.rebuild_grid()
+            del self._silent_status
+            self.update_status()
+            TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
+        else:
+            del self._silent_status
+        dlg.Destroy()
+
+
+    def on_delete_object(self, event):
+        """删除对象"""
+        obj = self.find_object_at(self.cursor_x, self.cursor_y)
+        if not obj:
+            wx.MessageBox("当前光标位置没有对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        
+        result = wx.MessageBox(f"确定要删除对象 \"{obj.get('name', '')}\" 吗？", "确认", wx.YES_NO | wx.ICON_QUESTION)
+        if result == wx.ID_YES:
+            obj_id = obj.get("id")
+            self.object_layers[0]["objects"] = [o for o in self.object_layers[0]["objects"] if o.get("id") != obj_id]
+            self.rebuild_grid()
+            self.update_status()
+            TTS.speak(f"已删除对象")
+
+
+    def on_clear_all_objects(self, event):
+        """清除所有对象"""
+        result = wx.MessageBox("确定要清除所有对象吗？", "确认", wx.YES_NO | wx.ICON_QUESTION)
+        if result == wx.ID_YES:
+            self.object_layers[0]["objects"] = []
+            self.rebuild_grid()
+            self.update_status()
+            TTS.speak("已清除所有对象")
+
+
     def on_open(self, event):
         """
         打开地图文件
@@ -1000,22 +1267,49 @@ class MapEditorFrame(wx.Frame):
                 wx.MessageBox("没有找到图层数据！", "错误", wx.OK | wx.ICON_ERROR)
                 return
             
-            layer_data = layers[0].get('data', [])
-            if not layer_data:
-                wx.MessageBox("没有找到瓦片数据！", "错误", wx.OK | wx.ICON_ERROR)
-                return
+            # 重置对象层
+            self.object_layers = []
+            self.next_object_id = 1
             
-            # 将一维数组转换为二维数组（行优先）
-            self.map_data = []
-            for y in range(new_height):
-                row = []
-                for x in range(new_width):
-                    idx = y * new_width + x
-                    if idx < len(layer_data):
-                        row.append(layer_data[idx])
-                    else:
-                        row.append(0)
-                self.map_data.append(row)
+            # 遍历所有图层
+            for layer in layers:
+                layer_type = layer.get('type', '')
+                if layer_type == 'tilelayer':
+                    # 瓦片层
+                    layer_data = layer.get('data', [])
+                    if not layer_data:
+                        wx.MessageBox("没有找到瓦片数据！", "错误", wx.OK | wx.ICON_ERROR)
+                        return
+                    
+                    # 将一维数组转换为二维数组（行优先）
+                    self.map_data = []
+                    for y in range(new_height):
+                        row = []
+                        for x in range(new_width):
+                            idx = y * new_width + x
+                            if idx < len(layer_data):
+                                row.append(layer_data[idx])
+                            else:
+                                row.append(0)
+                        self.map_data.append(row)
+                        
+                elif layer_type == 'objectgroup':
+                    # 对象层
+                    objects = layer.get('objects', [])
+                    # 更新最大对象ID
+                    for obj in objects:
+                        obj_id = obj.get('id', 0)
+                        if obj_id >= self.next_object_id:
+                            self.next_object_id = obj_id + 1
+                    self.object_layers.append(layer)
+            
+            # 如果没有对象层，创建默认的
+            if not self.object_layers:
+                self.object_layers = [{
+                    "type": "objectgroup",
+                    "name": "Objects",
+                    "objects": []
+                }]
             
             # 更新地图尺寸
             self.width = new_width
@@ -1048,7 +1342,13 @@ class MapEditorFrame(wx.Frame):
         # 填充数据
         for y in range(self.height):
             for x in range(self.width):
-                self.grid.SetCellValue(y, x, str(self.map_data[y][x]))
+                tile_value = str(self.map_data[y][x])
+                obj_text = self.get_object_display_text(x, y)
+                if obj_text:
+                    display_text = f"{tile_value} {obj_text}"
+                else:
+                    display_text = tile_value
+                self.grid.SetCellValue(y, x, display_text)
         
         # 重置光标位置
         self.cursor_x = 0
@@ -1076,6 +1376,9 @@ class MapEditorFrame(wx.Frame):
             for x in range(self.width):
                 data.append(self.map_data[y][x])
 
+        # 计算图层数量（瓦片层 + 对象层）
+        total_layers = 1 + len(self.object_layers)
+        
         # 构建Tiled JSON格式数据
         tiled_json = {
             "width": self.width,                  # 地图宽度
@@ -1088,13 +1391,13 @@ class MapEditorFrame(wx.Frame):
                 "opacity": 1,                     # 不透明度
                 "type": "tilelayer",              # 图层类型（瓦片层）
                 "visible": True                   # 是否可见
-            }],
+            }] + self.object_layers,             # 添加对象层
             "tilewidth": 32,                      # 瓦片宽度（像素）
             "tileheight": 32,                     # 瓦片高度（像素）
             "orientation": "orthogonal",          # 地图方向（正交）
             "infinite": False,                    # 非无限地图
-            "nextlayerid": 2,                     # 下一个图层ID
-            "nextobjectid": 1,                    # 下一个对象ID
+            "nextlayerid": total_layers + 1,     # 下一个图层ID
+            "nextobjectid": self.next_object_id, # 下一个对象ID
             "renderorder": "right-down",          # 渲染顺序（从右到下）
             "tiledversion": "1.10.1",             # Tiled版本
             "version": "1.9",                      # JSON格式版本
