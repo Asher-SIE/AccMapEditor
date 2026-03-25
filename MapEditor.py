@@ -1565,7 +1565,7 @@ class MapEditorFrame(wx.Frame):
             "tile_definitions": self.tile_definitions
         }
 
-        json_str = json.dumps(tiled_json, indent=2)
+        json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
 
         def format_data(match):
             content = match.group(1)
