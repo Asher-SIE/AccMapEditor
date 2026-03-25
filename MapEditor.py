@@ -193,6 +193,83 @@ class PropertyDialog(wx.Dialog):
         return self.properties
 
 
+class MapPropertiesDialog(wx.Dialog):
+    """地图属性编辑对话框"""
+    def __init__(self, parent, map_properties):
+        super().__init__(parent, title="编辑地图属性")
+        
+        self.map_properties = map_properties.copy()
+        
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        sizer.Add(wx.StaticText(self, label="属性列表："), 0, wx.ALL, 5)
+        
+        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 120))
+        self.refresh_prop_list()
+        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
+        
+        input_sizer = wx.FlexGridSizer(rows=2, cols=2, hgap=5, vgap=5)
+        input_sizer.Add(wx.StaticText(self, label="名称:"))
+        self.name_input = wx.TextCtrl(self)
+        input_sizer.Add(self.name_input, 1, wx.EXPAND)
+        input_sizer.Add(wx.StaticText(self, label="值:"))
+        self.value_input = wx.TextCtrl(self)
+        input_sizer.Add(self.value_input, 1, wx.EXPAND)
+        sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_add = wx.Button(self, label="添加/更新")
+        btn_del = wx.Button(self, label="删除选中")
+        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_del, 1)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        
+        btn_sizer2 = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer2, 0, wx.EXPAND | wx.ALL, 5)
+        
+        self.SetSizer(sizer)
+        self.SetSize((400, 350))
+        
+        self.Bind(wx.EVT_BUTTON, self.on_add, btn_add)
+        self.Bind(wx.EVT_BUTTON, self.on_delete, btn_del)
+        self.Bind(wx.EVT_LISTBOX, self.on_select, self.prop_list)
+    
+    def refresh_prop_list(self):
+        self.prop_list.Clear()
+        for name, value in self.map_properties.items():
+            self.prop_list.Append(f"{name} = {value}")
+    
+    def on_select(self, event):
+        text = self.prop_list.GetString(self.prop_list.GetSelection())
+        if " = " in text:
+            name, value = text.split(" = ", 1)
+            self.name_input.SetValue(name)
+            self.value_input.SetValue(value)
+    
+    def on_add(self, event):
+        name = self.name_input.GetValue().strip()
+        value = self.value_input.GetValue().strip()
+        if not name:
+            wx.MessageBox("请输入属性名称！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        self.map_properties[name] = value
+        self.refresh_prop_list()
+    
+    def on_delete(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        text = self.prop_list.GetString(sel)
+        if " = " in text:
+            name = text.split(" = ")[0]
+            del self.map_properties[name]
+            self.refresh_prop_list()
+    
+    def get_properties(self):
+        return self.map_properties
+
+
 class ObjectDialog(wx.Dialog):
     """对象编辑对话框"""
     TILE_SIZE = 32  # 瓦片大小
@@ -518,6 +595,7 @@ class MapEditorFrame(wx.Frame):
         }]
         self.next_object_id = 1  # 下一个对象ID
         self.selected_object = None  # 当前选中的对象
+        self.map_properties = {"name": "Ground", "bgm": ""}  # 地图属性
 
         # 初始化UI和菜单
         self.init_ui()
@@ -634,6 +712,7 @@ class MapEditorFrame(wx.Frame):
         save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
         resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\t&R")
         custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\t&C")
+        map_prop_item = file_menu.Append(wx.ID_ANY, "编辑地图属性...\t&M")
         # 添加分隔符
         file_menu.AppendSeparator()
         exit_item = file_menu.Append(wx.ID_EXIT, "退出\t&X")
@@ -672,6 +751,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_save, save_item)          # 保存事件
         self.Bind(wx.EVT_MENU, self.on_resize, resize_item)      # 调整尺寸事件
         self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)  # 自定义瓦片事件
+        self.Bind(wx.EVT_MENU, self.on_edit_map_properties, map_prop_item)  # 地图属性事件
         self.Bind(wx.EVT_MENU, self.on_close_file, close_item)    # 关闭文件事件
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)          # 退出事件
         # 绑定编辑菜单事件
@@ -784,6 +864,7 @@ class MapEditorFrame(wx.Frame):
             "objects": []
         }]
         self.next_object_id = 1
+        self.map_properties = {"name": "Ground", "bgm": ""}
         # 重建网格
         self.rebuild_grid()
         self.update_status()
@@ -860,6 +941,14 @@ class MapEditorFrame(wx.Frame):
         self.Unbind(wx.EVT_CHAR_HOOK)
         self.tile_window = CustomTileDialog(self, self.tile_definitions)
         self.tile_window.Show()
+
+    def on_edit_map_properties(self, event):
+        """编辑地图属性"""
+        dlg = MapPropertiesDialog(self, self.map_properties)
+        if dlg.ShowModal() == wx.ID_OK:
+            self.map_properties = dlg.get_properties()
+            TTS.speak("地图属性已更新")
+        dlg.Destroy()
 
     def enable_and_update(self, tile_data):
         """
@@ -1389,6 +1478,9 @@ class MapEditorFrame(wx.Frame):
                     "objects": []
                 }]
             
+            # 读取地图属性
+            self.map_properties = data.get('map_properties', {"name": "Ground", "bgm": ""})
+            
             # 更新地图尺寸
             self.width = new_width
             self.height = new_height
@@ -1464,13 +1556,14 @@ class MapEditorFrame(wx.Frame):
             "height": self.height,                # 地图高度
             "layers": [{                          # 图层列表
                 "data": data,                     # 瓦片数据（一维）
-                "name": "Ground",                 # 图层名称
+                "name": self.map_properties.get("name", "Ground"),  # 图层名称
                 "width": self.width,              # 图层宽度
                 "height": self.height,            # 图层高度
                 "opacity": 1,                     # 不透明度
                 "type": "tilelayer",              # 图层类型（瓦片层）
                 "visible": True                   # 是否可见
             }] + self.object_layers,             # 添加对象层
+            "map_properties": self.map_properties,  # 地图属性
             "tilewidth": 32,                      # 瓦片宽度（像素）
             "tileheight": 32,                     # 瓦片高度（像素）
             "orientation": "orthogonal",          # 地图方向（正交）
