@@ -725,6 +725,7 @@ class MapEditorFrame(wx.Frame):
         select_tile_item = edit_menu.Append(wx.ID_ANY, "选择瓦片\tEnter")
         selection_start_item = edit_menu.Append(wx.ID_ANY, "选区开始点\tShift+Enter")
         selection_end_item = edit_menu.Append(wx.ID_ANY, "选区结束点\tCtrl+Enter")
+        fill_item = edit_menu.Append(wx.ID_ANY, "填充选区\tCtrl+F")
         edit_menu.AppendSeparator()
         copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
         paste_item = edit_menu.Append(wx.ID_ANY, "粘贴\tCtrl+V")
@@ -761,6 +762,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_set_tile, select_tile_item)
         self.Bind(wx.EVT_MENU, self.on_selection_start, selection_start_item)
         self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
+        self.Bind(wx.EVT_MENU, self.on_fill_selection, fill_item)
         self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
         self.Bind(wx.EVT_MENU, self.on_goto_cell, goto_item)
@@ -807,6 +809,9 @@ class MapEditorFrame(wx.Frame):
                 return
             elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard(None)
+                return
+            elif key == ord('F'):        # Ctrl+F：填充选区
+                self.on_fill_selection(None)
                 return
         # 处理 Delete 键：删除对象
         elif key == wx.WXK_DELETE:
@@ -1241,6 +1246,37 @@ class MapEditorFrame(wx.Frame):
         self.clear_selected(None)
         TTS.cancel()
         TTS.speak('清除')
+
+
+    def on_fill_selection(self, event):
+        """
+        填充选区 - 调出瓦片选择对话框进行填充
+        :param event: 事件对象
+        """
+        dlg = TileSelectionDialog(self, self.tile_definitions)
+        if dlg.ShowModal() == wx.ID_OK:
+            tile_id = dlg.GetSelectedTileId()
+            self.fill_selection(tile_id)
+            self.Refresh()
+        dlg.Destroy()
+
+
+    def fill_selection(self, tile_id):
+        """
+        执行填充操作
+        :param tile_id: 瓦片ID
+        """
+        bounds = self.get_selection_bounds()
+        if bounds:
+            left, top, right, bottom = bounds
+            for y in range(top, bottom + 1):
+                for x in range(left, right + 1):
+                    self.map_data[y][x] = tile_id
+                    self.grid.SetCellValue(y, x, str(tile_id))
+        else:
+            self.map_data[self.cursor_y][self.cursor_x] = tile_id
+            self.grid.SetCellValue(self.cursor_y, self.cursor_x, str(tile_id))
+        self.update_status()
 
 
     def clear_selected(self, event):
