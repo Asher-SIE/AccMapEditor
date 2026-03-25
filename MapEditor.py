@@ -718,6 +718,8 @@ class MapEditorFrame(wx.Frame):
         
         # 编辑菜单
         edit_menu = wx.Menu()
+        goto_item = edit_menu.Append(wx.ID_ANY, "跳转单元格...\tCtrl+G")
+        edit_menu.AppendSeparator()
         clear_item = edit_menu.Append(wx.ID_ANY, "清除选区\tEsc")
         delete_item = edit_menu.Append(wx.ID_ANY, "清除单元格\tBackspace")
         select_tile_item = edit_menu.Append(wx.ID_ANY, "选择瓦片\tEnter")
@@ -761,6 +763,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
         self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
+        self.Bind(wx.EVT_MENU, self.on_goto_cell, goto_item)
         # 绑定对象菜单事件
         self.Bind(wx.EVT_MENU, self.on_add_object, add_object_item)
         self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
@@ -1016,6 +1019,29 @@ class MapEditorFrame(wx.Frame):
         # 强制刷新UI
         wx.Yield() 
 
+    def on_goto_cell(self, event):
+        """跳转单元格"""
+        dlg = wx.TextEntryDialog(self, "输入目标坐标（格式：x,y）", "跳转单元格", "")
+        if dlg.ShowModal() == wx.ID_OK:
+            try:
+                text = dlg.GetValue().strip()
+                x, y = map(int, text.split(','))
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    self.cursor_x = x
+                    self.cursor_y = y
+                    self.grid.SelectBlock(y, x, y, x)
+                    self.grid.MakeCellVisible(y, x)
+                    self.update_status()
+                    TTS.cancel()
+                    TTS.speak(f"跳转至 {x} {y}")
+                else:
+                    TTS.cancel()
+                    TTS.speak("坐标超出范围")
+            except:
+                TTS.cancel()
+                TTS.speak("格式错误")
+        dlg.Destroy()
+
 
     def on_key_down(self, event):
         """
@@ -1041,14 +1067,40 @@ class MapEditorFrame(wx.Frame):
             elif key == wx.WXK_DOWN and self.cursor_y < self.height - 1:  # 下方向键
                 self.cursor_y += 1
                 moved = True
+        
+        # 光标移动后更新选中状态和状态栏
+        if moved:
+            self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
+            self.update_status()
+            return
+
         if key == wx.WXK_ESCAPE:
             self.clear_selected(None)
+            return
 
-            # 光标移动后更新选中状态和状态栏
-            if moved:
-                self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
-                self.update_status()
-                return
+        # Ctrl+G 跳转到指定单元格
+        elif key == ord('G') and modifiers == wx.MOD_CONTROL:
+            dlg = wx.TextEntryDialog(self, "输入目标坐标（格式：x,y）", "跳转单元格", "")
+            if dlg.ShowModal() == wx.ID_OK:
+                try:
+                    text = dlg.GetValue().strip()
+                    x, y = map(int, text.split(','))
+                    if 0 <= x < self.width and 0 <= y < self.height:
+                        self.cursor_x = x
+                        self.cursor_y = y
+                        self.grid.SelectBlock(y, x, y, x)
+                        self.grid.MakeCellVisible(y, x)
+                        self.update_status()
+                        TTS.cancel()
+                        TTS.speak(f"跳转至 {x} {y}")
+                    else:
+                        TTS.cancel()
+                        TTS.speak("坐标超出范围")
+                except:
+                    TTS.cancel()
+                    TTS.speak("格式错误")
+            dlg.Destroy()
+            return
 
         # 回车键处理（选区/设置瓦片）
         elif key == wx.WXK_RETURN:
