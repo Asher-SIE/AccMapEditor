@@ -2,6 +2,7 @@ import copy
 import ctypes
 import json
 import os
+import re
 import TTS
 import wx
 import wx.grid as gridlib
@@ -25,7 +26,7 @@ class TileSelectionDialog(wx.Dialog):
         super().__init__(parent, title="选择瓦片")
         # 垂直布局管理器
         sizer = wx.BoxSizer(wx.VERTICAL)
-        # 构建列表框选项（按数字排序）
+        # 列表框选项（数字排序）
         choices = []
         for k, v in sorted(tile_defs.items(), key=lambda x: int(x[0])):
             if isinstance(v, dict):
@@ -46,14 +47,14 @@ class TileSelectionDialog(wx.Dialog):
         self.listbox.SetSelection(0)
         # 列表框添加到布局
         sizer.Add(self.listbox, 1, wx.ALL | wx.EXPAND, 10)
-        # 确定/取消按钮
+        
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
         # 设置对话框布局
         self.SetSizer(sizer)
         # 设置列表框为焦点控件
         self.listbox.SetFocus()
-        # 存储排序后的瓦片ID列表（按数字排序）
+        # 存储排序后的瓦片ID列表
         self.tile_keys = list(sorted(tile_defs.keys(), key=lambda x: int(x)))
 
     def GetSelectedTileId(self):
@@ -79,7 +80,7 @@ class ResizeDialog(wx.Dialog):
         # 宽度输入行
         w_sizer = wx.BoxSizer(wx.HORIZONTAL)
         w_sizer.Add(wx.StaticText(self, label="宽度:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        # 创建数值选择框，范围1-1000，默认值为当前宽度
+        # 数值选择框
         self.width_ctrl = wx.SpinCtrl(self, value=str(current_w), min=1, max=1000)
         w_sizer.Add(self.width_ctrl, 0)
         sizer.Add(w_sizer, 0, wx.ALL, 5)
@@ -282,7 +283,7 @@ class ObjectDialog(wx.Dialog):
         self.is_edit = is_edit
         self.next_id = next_id
         
-        # 计算默认瓦片坐标（从像素坐标转换）
+        # 计算默认瓦片坐标
         if obj_data and obj_data.get("x") is not None:
             default_tile_x = int(obj_data.get("x", 0)) // self.TILE_SIZE
             default_tile_y = int(obj_data.get("y", 0)) // self.TILE_SIZE
@@ -300,11 +301,11 @@ class ObjectDialog(wx.Dialog):
         self.type_input = wx.TextCtrl(self, value=self.obj_data.get("type", ""))
         info_sizer.Add(self.type_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="X坐标(瓦片)："))
+        info_sizer.Add(wx.StaticText(self, label="X坐标："))
         self.tile_x_input = wx.SpinCtrl(self, value=str(default_tile_x), min=0, max=1000)
         info_sizer.Add(self.tile_x_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="Y坐标(瓦片)："))
+        info_sizer.Add(wx.StaticText(self, label="Y坐标："))
         self.tile_y_input = wx.SpinCtrl(self, value=str(default_tile_y), min=0, max=1000)
         info_sizer.Add(self.tile_y_input, 1, wx.EXPAND)
         
@@ -554,7 +555,7 @@ class MapEditorFrame(wx.Frame):
         style = wx.DEFAULT_FRAME_STYLE & ~wx.RESIZE_BORDER & ~wx.MAXIMIZE_BOX
         super().__init__(None, title="地图编辑器 V1.0", size=(1366, 768), style=style)
         
-        # 使用Windows API移除系统菜单（Alt+空格）- 彻底移除WS_SYSMENU样式
+        # 使用Windows API移除系统菜单
         try:
             hwnd = self.GetHandle()
             if hwnd:
@@ -579,14 +580,14 @@ class MapEditorFrame(wx.Frame):
         # 加载瓦片字典 JSON
         global TILE_DEFINITIONS
         TILE_DEFINITIONS = self.load_tiled_data()
-        # 复制默认瓦片类型定义，避免修改原字典
+        # 复制默认瓦片类型定义
         self.tile_definitions = TILE_DEFINITIONS.copy()
         
         # 区域选择相关变量
         self.selection_start = None  # 选区起始坐标 (x, y)
         self.selection_end = None    # 选区结束坐标 (x, y)
 
-        # 对象层数据
+        # 对象层
         self.object_layers = [{
             "type": "objectgroup",
             "objects": []
@@ -707,7 +708,7 @@ class MapEditorFrame(wx.Frame):
         file_menu = wx.Menu()
         open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
         close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件\t&L")
-        save_item = file_menu.Append(wx.ID_SAVE, "保存为 Tiled JSON...\tCtrl+S")
+        save_item = file_menu.Append(wx.ID_SAVE, "保存...\tCtrl+S")
         resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\t&R")
         custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\t&C")
         map_prop_item = file_menu.Append(wx.ID_ANY, "编辑地图属性...\t&M")
@@ -729,8 +730,8 @@ class MapEditorFrame(wx.Frame):
         # 对象菜单
         object_menu = wx.Menu()
         add_object_item = object_menu.Append(wx.ID_ANY, "添加对象...\tCtrl+Shift+A")
-        edit_object_item = object_menu.Append(wx.ID_ANY, "编辑对象...\tEnter(在对象上)")
-        delete_object_item = object_menu.Append(wx.ID_ANY, "删除对象...\tDelete(在对象上)")
+        edit_object_item = object_menu.Append(wx.ID_ANY, "编辑对象...")
+        delete_object_item = object_menu.Append(wx.ID_ANY, "删除对象...\tDelete")
         object_menu.AppendSeparator()
         copy_object_item = object_menu.Append(wx.ID_ANY, "复制对象\tCtrl+Shift+C")
         paste_object_item = object_menu.Append(wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
@@ -1402,7 +1403,7 @@ class MapEditorFrame(wx.Frame):
     def update_title(self):
         """更新窗口标题"""
         if self.current_file:
-            import os
+            
             filename = os.path.basename(self.current_file)
             self.SetTitle(f"{filename} - 地图编辑器 V1.0")
         else:
@@ -1537,7 +1538,7 @@ class MapEditorFrame(wx.Frame):
         """
         将地图数据保存为Tiled编辑器兼容的JSON格式
         """
-        import re
+        
 
         data = []
         for y in range(self.height):
@@ -1599,7 +1600,6 @@ class MapEditorApp(wx.App):
 if __name__ == "__main__":
     # 创建应用程序实例
     app = MapEditorApp()
-    # 启动应用程序主循环
     app.MainLoop()
 
 
