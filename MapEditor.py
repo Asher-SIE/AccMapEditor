@@ -1037,6 +1037,7 @@ class MapEditorFrame(wx.Frame):
                     self.cursor_y = y
                     self.grid.SelectBlock(y, x, y, x)
                     self.grid.MakeCellVisible(y, x)
+                    self.grid.SetGridCursor(y, x)
                     self.update_status()
                     TTS.cancel()
                     TTS.speak(f"跳转至 {x} {y}")
@@ -1089,6 +1090,7 @@ class MapEditorFrame(wx.Frame):
                         self.cursor_y = y
                         self.grid.SelectBlock(y, x, y, x)
                         self.grid.MakeCellVisible(y, x)
+                        self.grid.SetGridCursor(y, x)
                         self.update_status()
                         TTS.cancel()
                         TTS.speak(f"跳转至 {x} {y}")
