@@ -3,6 +3,7 @@ venv/
 # Pyinstaller 构建
 build/
 dist/
+MapEditor/
 # Python 字节码和缓存
 __pycache__/
 *.py[cod]

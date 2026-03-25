@@ -1019,6 +1019,7 @@ class MapEditorFrame(wx.Frame):
         # 强制刷新UI
         wx.Yield() 
 
+
     def on_goto_cell(self, event):
         """跳转单元格"""
         dlg = wx.TextEntryDialog(self, "输入目标坐标（格式：x,y）", "跳转单元格", "")
@@ -1067,13 +1068,6 @@ class MapEditorFrame(wx.Frame):
             elif key == wx.WXK_DOWN and self.cursor_y < self.height - 1:  # 下方向键
                 self.cursor_y += 1
                 moved = True
-        
-        # 光标移动后更新选中状态和状态栏
-        if moved:
-            self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
-            self.update_status()
-            return
-
         if key == wx.WXK_ESCAPE:
             self.clear_selected(None)
             return

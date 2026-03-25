@@ -22,5 +22,49 @@
     "5": {
         "name": "月溪村",
         "properties": {}
+    },
+    "6": {
+        "name": "月溪河",
+        "properties": {}
+    },
+    "7": {
+        "name": "莹辉城北",
+        "properties": {}
+    },
+    "8": {
+        "name": "莹辉城南",
+        "properties": {}
+    },
+    "9": {
+        "name": "莹辉城西",
+        "properties": {}
+    },
+    "10": {
+        "name": "莹辉城东",
+        "properties": {}
+    },
+    "11": {
+        "name": "村南口",
+        "properties": {}
+    },
+    "12": {
+        "name": "村北口",
+        "properties": {}
+    },
+    "13": {
+        "name": "城北空地",
+        "properties": {}
+    },
+    "14": {
+        "name": "城南空地",
+        "properties": {}
+    },
+    "15": {
+        "name": "城西空地",
+        "properties": {}
+    },
+    "16": {
+        "name": "城东空地",
+        "properties": {}
     }
 }
