@@ -195,13 +195,20 @@ class PropertyDialog(wx.Dialog):
 
 class ObjectDialog(wx.Dialog):
     """对象编辑对话框"""
-    def __init__(self, parent, obj_data=None, is_edit=False, next_id=1):
+    TILE_SIZE = 32  # 瓦片大小
+    
+    def __init__(self, parent, obj_data=None, is_edit=False, next_id=1, default_tile_x=0, default_tile_y=0):
         title = "编辑对象" if is_edit else "添加对象"
         super().__init__(parent, title=title)
         
         self.obj_data = obj_data if obj_data else {}
         self.is_edit = is_edit
         self.next_id = next_id
+        
+        # 计算默认瓦片坐标（从像素坐标转换）
+        if obj_data and obj_data.get("x") is not None:
+            default_tile_x = int(obj_data.get("x", 0)) // self.TILE_SIZE
+            default_tile_y = int(obj_data.get("y", 0)) // self.TILE_SIZE
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
@@ -216,21 +223,21 @@ class ObjectDialog(wx.Dialog):
         self.type_input = wx.TextCtrl(self, value=self.obj_data.get("type", ""))
         info_sizer.Add(self.type_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="X坐标(像素)："))
-        self.x_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("x", 0))), min=0, max=100000)
-        info_sizer.Add(self.x_input, 1, wx.EXPAND)
+        info_sizer.Add(wx.StaticText(self, label="X坐标(瓦片)："))
+        self.tile_x_input = wx.SpinCtrl(self, value=str(default_tile_x), min=0, max=1000)
+        info_sizer.Add(self.tile_x_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="Y坐标(像素)："))
-        self.y_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("y", 0))), min=0, max=100000)
-        info_sizer.Add(self.y_input, 1, wx.EXPAND)
+        info_sizer.Add(wx.StaticText(self, label="Y坐标(瓦片)："))
+        self.tile_y_input = wx.SpinCtrl(self, value=str(default_tile_y), min=0, max=1000)
+        info_sizer.Add(self.tile_y_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="宽度(像素)："))
-        self.width_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("width", 32))), min=1, max=1000)
-        info_sizer.Add(self.width_input, 1, wx.EXPAND)
+        info_sizer.Add(wx.StaticText(self, label="宽度(瓦片)："))
+        self.tile_w_input = wx.SpinCtrl(self, value=str(int(obj_data.get("width", 32)) // self.TILE_SIZE if obj_data else 1), min=1, max=100)
+        info_sizer.Add(self.tile_w_input, 1, wx.EXPAND)
         
-        info_sizer.Add(wx.StaticText(self, label="高度(像素)："))
-        self.height_input = wx.SpinCtrl(self, value=str(int(self.obj_data.get("height", 32))), min=1, max=1000)
-        info_sizer.Add(self.height_input, 1, wx.EXPAND)
+        info_sizer.Add(wx.StaticText(self, label="高度(瓦片)："))
+        self.tile_h_input = wx.SpinCtrl(self, value=str(int(obj_data.get("height", 32)) // self.TILE_SIZE if obj_data else 1), min=1, max=100)
+        info_sizer.Add(self.tile_h_input, 1, wx.EXPAND)
         
         sizer.Add(info_sizer, 0, wx.EXPAND | wx.ALL, 10)
         
@@ -285,14 +292,20 @@ class ObjectDialog(wx.Dialog):
         self.refresh_prop_list()
     
     def get_object_data(self):
+        # 瓦片坐标转换为像素坐标
+        tile_x = self.tile_x_input.GetValue()
+        tile_y = self.tile_y_input.GetValue()
+        tile_w = self.tile_w_input.GetValue()
+        tile_h = self.tile_h_input.GetValue()
+        
         obj = {
             "id": self.obj_data.get("id", self.next_id),
             "name": self.name_input.GetValue().strip(),
             "type": self.type_input.GetValue().strip(),
-            "x": self.x_input.GetValue(),
-            "y": self.y_input.GetValue(),
-            "width": self.width_input.GetValue(),
-            "height": self.height_input.GetValue(),
+            "x": tile_x * self.TILE_SIZE,
+            "y": tile_y * self.TILE_SIZE,
+            "width": tile_w * self.TILE_SIZE,
+            "height": tile_h * self.TILE_SIZE,
             "properties": self.properties
         }
         return obj
@@ -1152,6 +1165,7 @@ class MapEditorFrame(wx.Frame):
         
         OBJECT_CLIPBOARD = copy.deepcopy(obj)
         self.OBJECT_CLIPBOARD = OBJECT_CLIPBOARD
+        TTS.cancel()
         TTS.speak(f"已复制对象：{obj.get('name', '')}")
 
 
@@ -1173,24 +1187,21 @@ class MapEditorFrame(wx.Frame):
         self.object_layers[0]["objects"].append(new_obj)
         self.rebuild_grid()
         self.update_status()
+        TTS.cancel()
         TTS.speak(f"已粘贴对象：{new_obj.get('name', '')}")
 
 
     def find_object_at(self, tile_x, tile_y):
         """查找指定瓦片坐标处的对象"""
-        tilewidth = 32
-        tileheight = 32
-        pixel_x = tile_x * tilewidth
-        pixel_y = tile_y * tileheight
-        
         for layer in self.object_layers:
             for obj in layer.get("objects", []):
-                obj_x = obj.get("x", 0)
-                obj_y = obj.get("y", 0)
-                obj_w = obj.get("width", 32)
-                obj_h = obj.get("height", 32)
+                # 对象存储的是像素坐标，转换为瓦片坐标进行比较
+                obj_tile_x = obj.get("x", 0) // 32
+                obj_tile_y = obj.get("y", 0) // 32
+                obj_tile_w = obj.get("width", 32) // 32
+                obj_tile_h = obj.get("height", 32) // 32
                 
-                if obj_x <= pixel_x < obj_x + obj_w and obj_y <= pixel_y < obj_y + obj_h:
+                if obj_tile_x <= tile_x < obj_tile_x + obj_tile_w and obj_tile_y <= tile_y < obj_tile_y + obj_tile_h:
                     return obj
         return None
 
@@ -1207,7 +1218,8 @@ class MapEditorFrame(wx.Frame):
 
     def on_add_object(self, event):
         """添加对象"""
-        dlg = ObjectDialog(self, is_edit=False, next_id=self.next_object_id)
+        dlg = ObjectDialog(self, is_edit=False, next_id=self.next_object_id, 
+                          default_tile_x=self.cursor_x, default_tile_y=self.cursor_y)
         if dlg.ShowModal() == wx.ID_OK:
             obj_data = dlg.get_object_data()
             obj_data["id"] = self.next_object_id
@@ -1403,12 +1415,12 @@ class MapEditorFrame(wx.Frame):
                     display_text = tile_value
                 self.grid.SetCellValue(y, x, display_text)
         
-        # 重置光标位置
-        self.cursor_x = 0
-        self.cursor_y = 0
+        # 重置光标位置（仅首次加载时）
+        # 注意：这里不再强制重置为(0,0)，以保持添加/编辑对象后光标位置不变
+        # 如果需要首次加载重置，请在调用处处理
         self.selection_start = None
         self.selection_end = None
-        self.grid.SelectBlock(0, 0, 0, 0)
+        self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
 
 
     def on_save(self, event):
