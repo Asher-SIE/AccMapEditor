@@ -369,7 +369,6 @@ class ObjectDialog(wx.Dialog):
         self.refresh_prop_list()
     
     def get_object_data(self):
-        # 瓦片坐标转换为像素坐标
         tile_x = self.tile_x_input.GetValue()
         tile_y = self.tile_y_input.GetValue()
         tile_w = self.tile_w_input.GetValue()
@@ -377,6 +376,7 @@ class ObjectDialog(wx.Dialog):
         
         obj = {
             "id": self.obj_data.get("id", self.next_id),
+            "name": self.name_input.GetValue().strip(),
             "type": self.type_input.GetValue().strip(),
             "x": tile_x * self.TILE_SIZE,
             "y": tile_y * self.TILE_SIZE,
@@ -1537,40 +1537,46 @@ class MapEditorFrame(wx.Frame):
         """
         将地图数据保存为Tiled编辑器兼容的JSON格式
         """
-        # 将二维地图数据转为一维列表（Tiled格式要求：行优先）
+        import re
+
         data = []
         for y in range(self.height):
             for x in range(self.width):
                 data.append(self.map_data[y][x])
 
-        # 计算图层数量（瓦片层 + 对象层）
-        total_layers = 1 + len(self.object_layers)
-        
-        # 构建Tiled JSON格式数据
         tiled_json = {
-            "width": self.width,                  # 地图宽度
-            "height": self.height,                # 地图高度
-            "layers": [{                          # 图层列表
-                "data": data,                     # 瓦片数据（一维）
-                "width": self.width,              # 图层宽度
-                "height": self.height,            # 图层高度
-                "opacity": 1,                     # 不透明度
-                "type": "tilelayer",              # 图层类型（瓦片层）
-                "visible": True                   # 是否可见
-            }] + self.object_layers,             # 添加对象层
-            "map_properties": self.map_properties,  # 地图属性
-            "tilewidth": 32,                      # 瓦片宽度（像素）
-            "tileheight": 32,                     # 瓦片高度（像素）
-            "orientation": "orthogonal",          # 地图方向（正交）
-            "infinite": False,                    # 非无限地图
-            "renderorder": "right-down",          # 渲染顺序（从右到下）
-            "version": "1.9",                      # JSON格式版本
-            "tile_definitions": self.tile_definitions  # 瓦片定义（含属性）
+            "width": self.width,
+            "height": self.height,
+            "layers": [{
+                "data": data,
+                "width": self.width,
+                "height": self.height,
+                "opacity": 1,
+                "type": "tilelayer",
+                "visible": True
+            }] + self.object_layers,
+            "map_properties": self.map_properties,
+            "tilewidth": 32,
+            "tileheight": 32,
+            "orientation": "orthogonal",
+            "infinite": False,
+            "renderorder": "right-down",
+            "version": "1.9",
+            "tile_definitions": self.tile_definitions
         }
 
-        # 写入JSON文件（UTF-8编码，缩进2格）
+        json_str = json.dumps(tiled_json, indent=2)
+
+        def format_data(match):
+            content = match.group(1)
+            arr = json.loads('[' + content + ']')
+            lines = [', '.join(str(v) for v in arr[i:i+50]) for i in range(0, len(arr), 50)]
+            return '"data": [\n    ' + ',\n    '.join(lines) + '\n  ]'
+
+        json_str = re.sub(r'"data":\s*\[(.*?)\]', format_data, json_str, flags=re.DOTALL)
+
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(tiled_json, f, indent=2)
+            f.write(json_str)
         wx.MessageBox(f"地图已保存至:\n{filepath}", "成功", wx.OK)
 
 
