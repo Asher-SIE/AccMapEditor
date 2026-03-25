@@ -1278,6 +1278,7 @@ class MapEditorFrame(wx.Frame):
         else:
             self.map_data[self.cursor_y][self.cursor_x] = tile_id
             self.grid.SetCellValue(self.cursor_y, self.cursor_x, str(tile_id))
+        self.clear_selected(None)
         self.update_status()
 
 
