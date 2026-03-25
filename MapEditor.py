@@ -1185,7 +1185,7 @@ class MapEditorFrame(wx.Frame):
         new_obj["y"] = self.cursor_y * tileheight
         
         self.object_layers[0]["objects"].append(new_obj)
-        self.rebuild_grid()
+        self.refresh_current_cell()
         self.update_status()
         TTS.cancel()
         TTS.speak(f"已粘贴对象：{new_obj.get('name', '')}")
@@ -1204,6 +1204,16 @@ class MapEditorFrame(wx.Frame):
                 if obj_tile_x <= tile_x < obj_tile_x + obj_tile_w and obj_tile_y <= tile_y < obj_tile_y + obj_tile_h:
                     return obj
         return None
+
+    def refresh_current_cell(self):
+        """刷新当前单元格显示"""
+        tile_value = str(self.map_data[self.cursor_y][self.cursor_x])
+        obj_text = self.get_object_display_text(self.cursor_x, self.cursor_y)
+        if obj_text:
+            display_text = f"{tile_value} {obj_text}"
+        else:
+            display_text = tile_value
+        self.grid.SetCellValue(self.cursor_y, self.cursor_x, display_text)
 
 
     def get_object_display_text(self, tile_x, tile_y):
@@ -1226,8 +1236,9 @@ class MapEditorFrame(wx.Frame):
             self.next_object_id += 1
             
             self.object_layers[0]["objects"].append(obj_data)
-            self.rebuild_grid()
+            self.refresh_current_cell()
             self.update_status()
+            TTS.cancel()
             TTS.speak(f"已添加对象：{obj_data.get('name', '')}")
         dlg.Destroy()
 
@@ -1250,7 +1261,7 @@ class MapEditorFrame(wx.Frame):
                     self.object_layers[0]["objects"][i] = new_obj_data
                     break
             
-            self.rebuild_grid()
+            self.refresh_current_cell()
             del self._silent_status
             self.update_status()
             TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
@@ -1269,7 +1280,7 @@ class MapEditorFrame(wx.Frame):
         result = wx.MessageBox(f"确定要删除对象 \"{obj.get('name', '')}\" 吗？", "确认", wx.YES_NO | wx.ICON_QUESTION)
         if result == 2:  # wx.MessageBox 返回 2 表示"是"
             self.object_layers[0]["objects"].remove(obj)
-            self.rebuild_grid()
+            self.refresh_current_cell()
             self.update_status()
             TTS.speak(f"已删除对象")
 
@@ -1420,7 +1431,8 @@ class MapEditorFrame(wx.Frame):
         # 如果需要首次加载重置，请在调用处处理
         self.selection_start = None
         self.selection_end = None
-        self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
+        self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
+        self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
 
 
     def on_save(self, event):
