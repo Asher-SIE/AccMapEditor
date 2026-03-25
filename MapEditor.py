@@ -377,7 +377,6 @@ class ObjectDialog(wx.Dialog):
         
         obj = {
             "id": self.obj_data.get("id", self.next_id),
-            "name": self.name_input.GetValue().strip(),
             "type": self.type_input.GetValue().strip(),
             "x": tile_x * self.TILE_SIZE,
             "y": tile_y * self.TILE_SIZE,
@@ -590,7 +589,6 @@ class MapEditorFrame(wx.Frame):
         # 对象层数据
         self.object_layers = [{
             "type": "objectgroup",
-            "name": "Objects",
             "objects": []
         }]
         self.next_object_id = 1  # 下一个对象ID
@@ -860,7 +858,6 @@ class MapEditorFrame(wx.Frame):
         self.current_file = None  # 清空当前文件名
         self.object_layers = [{
             "type": "objectgroup",
-            "name": "Objects",
             "objects": []
         }]
         self.next_object_id = 1
@@ -1474,7 +1471,6 @@ class MapEditorFrame(wx.Frame):
             if not self.object_layers:
                 self.object_layers = [{
                     "type": "objectgroup",
-                    "name": "Objects",
                     "objects": []
                 }]
             
@@ -1556,7 +1552,6 @@ class MapEditorFrame(wx.Frame):
             "height": self.height,                # 地图高度
             "layers": [{                          # 图层列表
                 "data": data,                     # 瓦片数据（一维）
-                "name": self.map_properties.get("name", "Ground"),  # 图层名称
                 "width": self.width,              # 图层宽度
                 "height": self.height,            # 图层高度
                 "opacity": 1,                     # 不透明度
@@ -1568,10 +1563,7 @@ class MapEditorFrame(wx.Frame):
             "tileheight": 32,                     # 瓦片高度（像素）
             "orientation": "orthogonal",          # 地图方向（正交）
             "infinite": False,                    # 非无限地图
-            "nextlayerid": total_layers + 1,     # 下一个图层ID
-            "nextobjectid": self.next_object_id, # 下一个对象ID
             "renderorder": "right-down",          # 渲染顺序（从右到下）
-            "tiledversion": "1.10.1",             # Tiled版本
             "version": "1.9",                      # JSON格式版本
             "tile_definitions": self.tile_definitions  # 瓦片定义（含属性）
         }
