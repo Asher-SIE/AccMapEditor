@@ -5,15 +5,22 @@
     },
     "1": {
         "name": "墙壁",
-        "properties": {
-            "属性名": "属性值",
-            "accent": "true"
-        }
+        "properties": {}
     },
     "2": {
         "name": "草地",
-        "properties": {
-            "passable": "true"
-        }
+        "properties": {}
+    },
+    "3": {
+        "name": "小水洼",
+        "properties": {}
+    },
+    "4": {
+        "name": "城墙",
+        "properties": {}
+    },
+    "5": {
+        "name": "月溪村",
+        "properties": {}
     }
 }

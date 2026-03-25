@@ -1008,9 +1008,9 @@ class MapEditorFrame(wx.Frame):
         if not hasattr(self, '_silent_status'):
             TTS.cancel()
             if obj_tts:
-                TTS.speak(f"{coord_info} {obj_tts} {tile_name}")
+                TTS.speak(f"{obj_tts} {tile_name} {coord_info}")
             else:
-                TTS.speak(f"{coord_info} {tile_name}")
+                TTS.speak(f"{tile_name} {coord_info}")
         # 刷新状态栏显示
         self.status_label.Refresh()
         # 强制刷新UI
