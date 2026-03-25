@@ -726,13 +726,15 @@ class MapEditorFrame(wx.Frame):
             elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard(None)
                 return
-        # 处理删除/退格键：优先删除对象，否则清除瓦片
-        elif key == wx.WXK_DELETE or key == wx.WXK_BACK:
+        # 处理 Delete 键：删除对象
+        elif key == wx.WXK_DELETE:
             obj = self.find_object_at(self.cursor_x, self.cursor_y)
             if obj:
                 self.on_delete_object(None)
-            else:
-                self.delete_selection(None)
+            return
+        # 处理退格键：清除瓦片
+        elif key == wx.WXK_BACK:
+            self.delete_selection(None)
             return
         # 未处理的按键继续传递
         event.Skip()
