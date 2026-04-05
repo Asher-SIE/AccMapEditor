@@ -1254,14 +1254,14 @@ class MapEditorFrame(wx.Frame):
         if not bounds:
             # 无选区时清空当前单元格
             self.map_data[self.cursor_y][self.cursor_x] = 0
-            self.grid.SetCellValue(self.cursor_y, self.cursor_x, "0")
+            self.grid.SetCellValue(self.cursor_y, self.cursor_x, "")
         else:
             # 有选区时清空整个选区
             left, top, right, bottom = bounds
             for y in range(top, bottom + 1):
                 for x in range(left, right + 1):
                     self.map_data[y][x] = 0
-                    self.grid.SetCellValue(y, x, "0")
+                    self.grid.SetCellValue(y, x, "")
         # 更新状态栏
         self.update_status()
         self.clear_selected(None)
@@ -1293,10 +1293,10 @@ class MapEditorFrame(wx.Frame):
             for y in range(top, bottom + 1):
                 for x in range(left, right + 1):
                     self.map_data[y][x] = tile_id
-                    self.grid.SetCellValue(y, x, str(tile_id))
+                    self.grid.SetCellValue(y, x, str(tile_id) if tile_id != 0 else "")
         else:
             self.map_data[self.cursor_y][self.cursor_x] = tile_id
-            self.grid.SetCellValue(self.cursor_y, self.cursor_x, str(tile_id))
+            self.grid.SetCellValue(self.cursor_y, self.cursor_x, str(tile_id) if tile_id != 0 else "")
         self.clear_selected(None)
         self.update_status()
 
@@ -1338,7 +1338,7 @@ class MapEditorFrame(wx.Frame):
                 y = self.cursor_y + dy
                 x = self.cursor_x + dx
                 self.map_data[y][x] = tile_id
-                self.grid.SetCellValue(y, x, str(tile_id))
+                self.grid.SetCellValue(y, x, str(tile_id) if tile_id != 0 else "")
         # 更新状态栏
         self.update_status()
         self.clear_selected(None)
@@ -1401,7 +1401,8 @@ class MapEditorFrame(wx.Frame):
     def refresh_current_cell(self):
         """刷新当前单元格显示"""
         x, y = self.cursor_x, self.cursor_y
-        tile_value = str(self.map_data[y][x])
+        val = self.map_data[y][x]
+        tile_value = str(val) if val != 0 else ""
         collision_marker = "[C]" if (x, y) in self.collision_set else ""
         obj_text = self.get_object_display_text(x, y)
         parts = [p for p in [tile_value, collision_marker, obj_text] if p]
@@ -1617,7 +1618,8 @@ class MapEditorFrame(wx.Frame):
         # 填充数据
         for y in range(self.height):
             for x in range(self.width):
-                tile_value = str(self.map_data[y][x])
+                val = self.map_data[y][x]
+                tile_value = str(val) if val != 0 else ""
                 collision_marker = "[C]" if (x, y) in self.collision_set else ""
                 obj_text = self.get_object_display_text(x, y)
                 parts = [p for p in [tile_value, collision_marker, obj_text] if p]
