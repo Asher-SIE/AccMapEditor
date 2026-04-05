@@ -1,15 +1,22 @@
 {
     "0": {
         "name": "空地",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_grass3",
+            "description": "城外空地"
+        }
     },
     "1": {
         "name": "墙壁",
-        "properties": {}
+        "properties": {
+            "sound": "block"
+        }
     },
     "2": {
         "name": "草地",
-        "properties": {}
+        "properties": {
+            "sound": "grass"
+        }
     },
     "3": {
         "name": "小水洼",
@@ -25,23 +32,34 @@
     },
     "6": {
         "name": "月溪河",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Water1",
+            "description": "一条清澈的小河"
+        }
     },
     "7": {
         "name": "莹辉城北",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "8": {
         "name": "莹辉城南",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "9": {
         "name": "莹辉城西",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "10": {
         "name": "莹辉城东",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "11": {
         "name": "村南口",
@@ -53,18 +71,48 @@
     },
     "13": {
         "name": "城北空地",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "14": {
         "name": "城南空地",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "15": {
         "name": "城西空地",
-        "properties": {}
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
     },
     "16": {
         "name": "城东空地",
+        "properties": {
+            "sound": "Footstep_Stone1"
+        }
+    },
+    "17": {
+        "name": "村路",
+        "properties": {}
+    },
+    "18": {
+        "name": "中心广场",
+        "properties": {}
+    },
+    "19": {
+        "name": "石砌水井",
+        "properties": {}
+    },
+    "20": {
+        "name": "肉铺",
+        "properties": {
+            "sound": "block"
+        }
+    },
+    "21": {
+        "name": "门口",
         "properties": {}
     }
 }

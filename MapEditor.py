@@ -594,6 +594,7 @@ class MapEditorFrame(wx.Frame):
         }]
         self.next_object_id = 1  # 下一个对象ID
         self.selected_object = None  # 当前选中的对象
+        self.collision_set = set()  # set of (x, y) tuples，不可通行格子
         self.map_properties = {"name": "Ground", "bgm": ""}  # 地图属性
 
         # 初始化UI和菜单
@@ -823,6 +824,16 @@ class MapEditorFrame(wx.Frame):
         elif key == wx.WXK_BACK:
             self.delete_selection(None)
             return
+        # 空格键：切换当前格碰撞标记
+        elif key == wx.WXK_SPACE:
+            pos = (self.cursor_x, self.cursor_y)
+            if pos in self.collision_set:
+                self.collision_set.discard(pos)
+            else:
+                self.collision_set.add(pos)
+            self.refresh_current_cell()
+            self.update_status()
+            return
         # 未处理的按键继续传递
         event.Skip()
 
@@ -838,6 +849,9 @@ class MapEditorFrame(wx.Frame):
                     return True
         # 检查对象层是否有对象
         if self.object_layers and self.object_layers[0].get("objects"):
+            return True
+        # 检查碰撞数据
+        if self.collision_set:
             return True
         return False
 
@@ -871,6 +885,7 @@ class MapEditorFrame(wx.Frame):
         }]
         self.next_object_id = 1
         self.map_properties = {"name": "Ground", "bgm": ""}
+        self.collision_set = set()
         # 重建网格
         self.rebuild_grid()
         self.update_status()
@@ -930,6 +945,9 @@ class MapEditorFrame(wx.Frame):
             # 修正光标位置（防止超出新边界）
             self.cursor_x = min(self.cursor_x, new_w - 1)
             self.cursor_y = min(self.cursor_y, new_h - 1)
+            # 裁剪越界的碰撞坐标
+            self.collision_set = {(x, y) for (x, y) in self.collision_set
+                                  if x < new_w and y < new_h}
             # 选中光标所在单元格
             self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
             # 更新状态栏
@@ -1015,10 +1033,11 @@ class MapEditorFrame(wx.Frame):
         # 只在光标移动时播报，不在编辑对象时播报
         if not hasattr(self, '_silent_status'):
             TTS.cancel()
+            collision_info = "碰撞" if (self.cursor_x, self.cursor_y) in self.collision_set else ""
             if obj_tts:
-                TTS.speak(f"{obj_tts} {tile_name} {coord_info}")
+                TTS.speak(f"{obj_tts} {tile_name} {collision_info} {coord_info}")
             else:
-                TTS.speak(f"{tile_name} {coord_info}")
+                TTS.speak(f"{tile_name} {collision_info} {coord_info}")
         # 刷新状态栏显示
         self.status_label.Refresh()
         # 强制刷新UI
@@ -1381,13 +1400,12 @@ class MapEditorFrame(wx.Frame):
 
     def refresh_current_cell(self):
         """刷新当前单元格显示"""
-        tile_value = str(self.map_data[self.cursor_y][self.cursor_x])
-        obj_text = self.get_object_display_text(self.cursor_x, self.cursor_y)
-        if obj_text:
-            display_text = f"{tile_value} {obj_text}"
-        else:
-            display_text = tile_value
-        self.grid.SetCellValue(self.cursor_y, self.cursor_x, display_text)
+        x, y = self.cursor_x, self.cursor_y
+        tile_value = str(self.map_data[y][x])
+        collision_marker = "[C]" if (x, y) in self.collision_set else ""
+        obj_text = self.get_object_display_text(x, y)
+        parts = [p for p in [tile_value, collision_marker, obj_text] if p]
+        self.grid.SetCellValue(y, x, " ".join(parts))
 
 
     def get_object_display_text(self, tile_x, tile_y):
@@ -1562,6 +1580,11 @@ class MapEditorFrame(wx.Frame):
             
             # 读取地图属性
             self.map_properties = data.get('map_properties', {"name": "Ground", "bgm": ""})
+            # 读取碰撞数据
+            self.collision_set = set()
+            for coord in data.get('collision', {}).get('impassable', []):
+                if isinstance(coord, list) and len(coord) == 2:
+                    self.collision_set.add((coord[0], coord[1]))
             
             # 更新地图尺寸
             self.width = new_width
@@ -1595,12 +1618,10 @@ class MapEditorFrame(wx.Frame):
         for y in range(self.height):
             for x in range(self.width):
                 tile_value = str(self.map_data[y][x])
+                collision_marker = "[C]" if (x, y) in self.collision_set else ""
                 obj_text = self.get_object_display_text(x, y)
-                if obj_text:
-                    display_text = f"{tile_value} {obj_text}"
-                else:
-                    display_text = tile_value
-                self.grid.SetCellValue(y, x, display_text)
+                parts = [p for p in [tile_value, collision_marker, obj_text] if p]
+                self.grid.SetCellValue(y, x, " ".join(parts))
         
         # 重置光标位置（仅首次加载时）
         # 注意：这里不再强制重置为(0,0)，以保持添加/编辑对象后光标位置不变
@@ -1630,9 +1651,20 @@ class MapEditorFrame(wx.Frame):
             for x in range(self.width):
                 data.append(self.map_data[y][x])
 
+        # 构建不含 passable 的 tile_definitions 副本
+        export_tile_defs = copy.deepcopy(self.tile_definitions)
+        for tile_info in export_tile_defs.values():
+            if isinstance(tile_info, dict):
+                tile_info.get("properties", {}).pop("passable", None)
+
+        # 从 collision_set 构建稀疏坐标数组
+        impassable = sorted([x, y] for (x, y) in self.collision_set)
+
         tiled_json = {
             "width": self.width,
             "height": self.height,
+            "tilewidth": 32,
+            "collision": {"impassable": impassable},
             "layers": [{
                 "data": data,
                 "width": self.width,
@@ -1642,13 +1674,11 @@ class MapEditorFrame(wx.Frame):
                 "visible": True
             }] + self.object_layers,
             "map_properties": self.map_properties,
-            "tilewidth": 32,
-            "tileheight": 32,
             "orientation": "orthogonal",
             "infinite": False,
             "renderorder": "right-down",
             "version": "1.9",
-            "tile_definitions": self.tile_definitions
+            "tile_definitions": export_tile_defs,
         }
 
         json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
