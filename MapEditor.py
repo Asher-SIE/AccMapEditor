@@ -388,6 +388,170 @@ class ObjectDialog(wx.Dialog):
         return obj
 
 
+class ObjectManagerDialog(wx.Frame):
+    """对象管理器窗口 — 列出地图上所有对象"""
+    TILE_SIZE = 32
+
+    def __init__(self, parent):
+        super().__init__(parent, title="对象管理器", size=(620, 420))
+        self.parent = parent
+
+        panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        self.obj_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
+        self.obj_list.InsertColumn(0, "ID",       width=50)
+        self.obj_list.InsertColumn(1, "名称",     width=140)
+        self.obj_list.InsertColumn(2, "类型",     width=100)
+        self.obj_list.InsertColumn(3, "坐标(列,行)", width=110)
+        self.obj_list.InsertColumn(4, "属性数量", width=80)
+        main_sizer.Add(self.obj_list, 1, wx.EXPAND | wx.ALL, 5)
+
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_jump   = wx.Button(panel, label="跳转 &J")
+        self.btn_edit   = wx.Button(panel, label="编辑 &E")
+        self.btn_delete = wx.Button(panel, label="删除 &D")
+        self.btn_close  = wx.Button(panel, label="关闭 &C")
+        for btn in (self.btn_jump, self.btn_edit, self.btn_delete, self.btn_close):
+            btn_sizer.Add(btn, 1, wx.RIGHT, 5)
+        main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        panel.SetSizer(main_sizer)
+        self.populate_list()
+        self.obj_list.SetFocus()
+
+        self.obj_list.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_selection_changed)
+        self.obj_list.Bind(wx.EVT_KEY_DOWN, self.on_list_keydown)
+        self.btn_jump.Bind(wx.EVT_BUTTON, self.on_jump)
+        self.btn_edit.Bind(wx.EVT_BUTTON, self.on_edit)
+        self.btn_delete.Bind(wx.EVT_BUTTON, self.on_delete)
+        self.btn_close.Bind(wx.EVT_BUTTON, self.on_close)
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Show()
+
+    def populate_list(self):
+        self.obj_list.DeleteAllItems()
+        for obj in self.parent.object_layers[0].get("objects", []):
+            tile_x = obj.get("x", 0) // self.TILE_SIZE
+            tile_y = obj.get("y", 0) // self.TILE_SIZE
+            idx = self.obj_list.InsertItem(self.obj_list.GetItemCount(), str(obj.get("id", "")))
+            self.obj_list.SetItem(idx, 1, obj.get("name", ""))
+            self.obj_list.SetItem(idx, 2, obj.get("type", ""))
+            self.obj_list.SetItem(idx, 3, f"{tile_x},{tile_y}")
+            self.obj_list.SetItem(idx, 4, str(len(obj.get("properties", {}))))
+
+    def refresh_list(self, select_id=None):
+        self.populate_list()
+        if select_id is not None:
+            for i in range(self.obj_list.GetItemCount()):
+                if self.obj_list.GetItemText(i, 0) == str(select_id):
+                    self.obj_list.Select(i)
+                    self.obj_list.EnsureVisible(i)
+                    break
+
+    def _get_selected_obj(self):
+        idx = self.obj_list.GetFirstSelected()
+        if idx == -1:
+            return None
+        try:
+            obj_id = int(self.obj_list.GetItemText(idx, 0))
+        except ValueError:
+            return None
+        for obj in self.parent.object_layers[0].get("objects", []):
+            if obj.get("id") == obj_id:
+                return obj
+        return None
+
+    def on_selection_changed(self, event):
+        event.Skip()
+
+    def on_list_keydown(self, event):
+        key = event.GetKeyCode()
+        if key == wx.WXK_RETURN:
+            self.on_jump(None)
+        elif key == wx.WXK_DELETE:
+            self.on_delete(None)
+        elif key in (ord('E'), ord('e')):
+            self.on_edit(None)
+        else:
+            event.Skip()
+
+    def on_jump(self, event):
+        obj = self._get_selected_obj()
+        if not obj:
+            wx.MessageBox("请先选择一个对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        col = obj.get("x", 0) // self.TILE_SIZE
+        row = obj.get("y", 0) // self.TILE_SIZE
+        p = self.parent
+        if row >= p.height or col >= p.width:
+            TTS.cancel()
+            TTS.speak("对象坐标超出地图范围")
+            return
+        p.cursor_x = col
+        p.cursor_y = row
+        p.grid.SetGridCursor(row, col)
+        p.grid.SelectBlock(row, col, row, col)
+        p.grid.MakeCellVisible(row, col)
+        p.update_status()
+        p.Raise()
+
+    def on_edit(self, event):
+        obj = self._get_selected_obj()
+        if not obj:
+            wx.MessageBox("请先选择一个对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        obj_id = obj.get("id")
+        dlg = ObjectDialog(self, obj_data=obj, is_edit=True,
+                           next_id=self.parent.next_object_id)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_data = dlg.get_object_data()
+            new_data["id"] = obj_id
+            objects = self.parent.object_layers[0]["objects"]
+            for i, existing in enumerate(objects):
+                if existing.get("id") == obj_id:
+                    objects[i] = new_data
+                    break
+            old_col = obj.get("x", 0) // self.TILE_SIZE
+            old_row = obj.get("y", 0) // self.TILE_SIZE
+            new_col = new_data.get("x", 0) // self.TILE_SIZE
+            new_row = new_data.get("y", 0) // self.TILE_SIZE
+            p = self.parent
+            p.cursor_x, p.cursor_y = old_col, old_row
+            p.refresh_current_cell()
+            if (old_col, old_row) != (new_col, new_row):
+                p.cursor_x, p.cursor_y = new_col, new_row
+                p.refresh_current_cell()
+                p.cursor_x, p.cursor_y = old_col, old_row
+            self.refresh_list(select_id=obj_id)
+            TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
+        dlg.Destroy()
+
+    def on_delete(self, event):
+        obj = self._get_selected_obj()
+        if not obj:
+            wx.MessageBox("请先选择一个对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        result = wx.MessageBox(
+            f"确定要删除对象 \"{obj.get('name', '')}\" 吗？",
+            "确认", wx.YES_NO | wx.ICON_QUESTION
+        )
+        if result == 2:
+            self.parent.object_layers[0]["objects"].remove(obj)
+            del_col = obj.get("x", 0) // self.TILE_SIZE
+            del_row = obj.get("y", 0) // self.TILE_SIZE
+            p = self.parent
+            p.cursor_x, p.cursor_y = del_col, del_row
+            p.refresh_current_cell()
+            self.refresh_list()
+            TTS.cancel()
+            TTS.speak("已删除对象")
+
+    def on_close(self, event):
+        self.parent.object_manager_dlg = None
+        self.Destroy()
+
+
 class CustomTileDialog(wx.Frame):
     """编辑瓦片窗口"""
     def __init__(self, parent, tile_defs):
@@ -594,6 +758,7 @@ class MapEditorFrame(wx.Frame):
         }]
         self.next_object_id = 1  # 下一个对象ID
         self.selected_object = None  # 当前选中的对象
+        self.object_manager_dlg = None  # 对象管理器窗口引用
         self.collision_set = set()  # set of (x, y) tuples，不可通行格子
         self.map_properties = {"name": "Ground", "bgm": ""}  # 地图属性
 
@@ -741,7 +906,9 @@ class MapEditorFrame(wx.Frame):
         paste_object_item = object_menu.Append(wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
         object_menu.AppendSeparator()
         clear_all_objects_item = object_menu.Append(wx.ID_ANY, "清除所有对象")
-        
+        object_menu.AppendSeparator()
+        object_manager_item = object_menu.Append(wx.ID_ANY, "对象管理器...\tCtrl+Shift+M")
+
         # 将菜单添加到菜单栏
         menubar.Append(file_menu, "文件 &F")
         menubar.Append(edit_menu, "编辑 &E")
@@ -774,6 +941,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.copy_object, copy_object_item)
         self.Bind(wx.EVT_MENU, self.paste_object, paste_object_item)
         self.Bind(wx.EVT_MENU, self.on_clear_all_objects, clear_all_objects_item)
+        self.Bind(wx.EVT_MENU, self.on_open_object_manager, object_manager_item)
         # 绑定关闭事件，点击叉号最小化
         self.Bind(wx.EVT_CLOSE, self.on_minimize)
         # 绑定全局键盘钩子（处理快捷键）
@@ -785,6 +953,10 @@ class MapEditorFrame(wx.Frame):
         全局键盘事件处理（快捷键）
         :param event: 键盘事件对象
         """
+        focus = wx.Window.FindFocus()
+        if focus is None or focus.GetTopLevelParent() != self:
+            event.Skip()
+            return
         key = event.GetKeyCode()
         # 处理 Ctrl+Shift 组合键（优先检查）
         if event.ControlDown() and event.ShiftDown():
@@ -796,6 +968,9 @@ class MapEditorFrame(wx.Frame):
                 return
             elif key == ord('V'):        # Ctrl+Shift+V：粘贴对象
                 self.paste_object(None)
+                return
+            elif key == ord('M'):        # Ctrl+Shift+M：对象管理器
+                self.on_open_object_manager(None)
                 return
         # 处理Ctrl组合键
         if event.ControlDown():
@@ -822,17 +997,19 @@ class MapEditorFrame(wx.Frame):
             return
         # 处理退格键：清除瓦片
         elif key == wx.WXK_BACK:
-            self.delete_selection(None)
+            if self.grid.HasFocus():
+                self.delete_selection(None)
             return
         # 空格键：切换当前格碰撞标记
         elif key == wx.WXK_SPACE:
-            pos = (self.cursor_x, self.cursor_y)
-            if pos in self.collision_set:
-                self.collision_set.discard(pos)
-            else:
-                self.collision_set.add(pos)
-            self.refresh_current_cell()
-            self.update_status()
+            if self.grid.HasFocus():
+                pos = (self.cursor_x, self.cursor_y)
+                if pos in self.collision_set:
+                    self.collision_set.discard(pos)
+                else:
+                    self.collision_set.add(pos)
+                self.refresh_current_cell()
+                self.update_status()
             return
         # 未处理的按键继续传递
         event.Skip()
@@ -1433,6 +1610,8 @@ class MapEditorFrame(wx.Frame):
             self.update_status()
             TTS.cancel()
             TTS.speak(f"已添加对象：{obj_data.get('name', '')}")
+            if self.object_manager_dlg:
+                self.object_manager_dlg.refresh_list()
         dlg.Destroy()
 
 
@@ -1458,6 +1637,8 @@ class MapEditorFrame(wx.Frame):
             del self._silent_status
             self.update_status()
             TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
+            if self.object_manager_dlg:
+                self.object_manager_dlg.refresh_list()
         else:
             del self._silent_status
         dlg.Destroy()
@@ -1476,6 +1657,8 @@ class MapEditorFrame(wx.Frame):
             self.refresh_current_cell()
             self.update_status()
             TTS.speak(f"已删除对象")
+            if self.object_manager_dlg:
+                self.object_manager_dlg.refresh_list()
 
 
     def on_clear_all_objects(self, event):
@@ -1486,6 +1669,16 @@ class MapEditorFrame(wx.Frame):
             self.rebuild_grid()
             self.update_status()
             TTS.speak("已清除所有对象")
+            if self.object_manager_dlg:
+                self.object_manager_dlg.refresh_list()
+
+
+    def on_open_object_manager(self, event):
+        """打开对象管理器"""
+        if self.object_manager_dlg:
+            self.object_manager_dlg.Raise()
+            return
+        self.object_manager_dlg = ObjectManagerDialog(self)
 
 
     def on_open(self, event):
