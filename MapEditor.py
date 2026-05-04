@@ -273,7 +273,7 @@ class MapPropertiesDialog(wx.Dialog):
 
 class ObjectDialog(wx.Dialog):
     """对象编辑对话框"""
-    TILE_SIZE = 32  # 瓦片大小
+    TILE_SIZE = 32
     
     def __init__(self, parent, obj_data=None, is_edit=False, next_id=1, default_tile_x=0, default_tile_y=0):
         title = "编辑对象" if is_edit else "添加对象"
@@ -283,14 +283,12 @@ class ObjectDialog(wx.Dialog):
         self.is_edit = is_edit
         self.next_id = next_id
         
-        # 计算默认瓦片坐标
         if obj_data and obj_data.get("x") is not None:
             default_tile_x = int(obj_data.get("x", 0)) // self.TILE_SIZE
             default_tile_y = int(obj_data.get("y", 0)) // self.TILE_SIZE
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
-        # 基本信息
         info_sizer = wx.FlexGridSizer(rows=6, cols=2, hgap=5, vgap=5)
         
         info_sizer.Add(wx.StaticText(self, label="对象ID/名称："))
@@ -319,7 +317,6 @@ class ObjectDialog(wx.Dialog):
         
         sizer.Add(info_sizer, 0, wx.EXPAND | wx.ALL, 10)
         
-        # 属性编辑
         sizer.Add(wx.StaticText(self, label="自定义属性："), 0, wx.LEFT | wx.TOP, 10)
         
         self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 80))
@@ -334,7 +331,6 @@ class ObjectDialog(wx.Dialog):
         prop_btn_sizer.Add(self.btn_del_prop, 1)
         sizer.Add(prop_btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
         
-        # 按钮
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
         
@@ -343,6 +339,15 @@ class ObjectDialog(wx.Dialog):
         
         self.Bind(wx.EVT_BUTTON, self.on_add_prop, self.btn_add_prop)
         self.Bind(wx.EVT_BUTTON, self.on_del_prop, self.btn_del_prop)
+    
+    def Validate(self):
+        for ctrl in (self.tile_x_input, self.tile_y_input,
+                     self.tile_w_input, self.tile_h_input):
+            try:
+                ctrl.SetValue(int(ctrl.GetValue()))
+            except (ValueError, TypeError):
+                pass
+        return True
     
     def refresh_prop_list(self):
         self.prop_list.Clear()
@@ -395,6 +400,7 @@ class ObjectManagerDialog(wx.Frame):
     def __init__(self, parent):
         super().__init__(parent, title="对象管理器", size=(620, 420))
         self.parent = parent
+        self._editing = False
 
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -501,31 +507,37 @@ class ObjectManagerDialog(wx.Frame):
         if not obj:
             wx.MessageBox("请先选择一个对象！", "提示", wx.OK | wx.ICON_WARNING)
             return
-        obj_id = obj.get("id")
-        dlg = ObjectDialog(self, obj_data=obj, is_edit=True,
-                           next_id=self.parent.next_object_id)
-        if dlg.ShowModal() == wx.ID_OK:
-            new_data = dlg.get_object_data()
-            new_data["id"] = obj_id
-            objects = self.parent.object_layers[0]["objects"]
-            for i, existing in enumerate(objects):
-                if existing.get("id") == obj_id:
-                    objects[i] = new_data
-                    break
-            old_col = obj.get("x", 0) // self.TILE_SIZE
-            old_row = obj.get("y", 0) // self.TILE_SIZE
-            new_col = new_data.get("x", 0) // self.TILE_SIZE
-            new_row = new_data.get("y", 0) // self.TILE_SIZE
-            p = self.parent
-            p.cursor_x, p.cursor_y = old_col, old_row
-            p.refresh_current_cell()
-            if (old_col, old_row) != (new_col, new_row):
-                p.cursor_x, p.cursor_y = new_col, new_row
-                p.refresh_current_cell()
+        if self._editing:
+            return
+        self._editing = True
+        try:
+            obj_id = obj.get("id")
+            dlg = ObjectDialog(self, obj_data=obj, is_edit=True,
+                               next_id=self.parent.next_object_id)
+            if dlg.ShowModal() == wx.ID_OK:
+                new_data = dlg.get_object_data()
+                new_data["id"] = obj_id
+                objects = self.parent.object_layers[0]["objects"]
+                for i, existing in enumerate(objects):
+                    if existing.get("id") == obj_id:
+                        objects[i] = new_data
+                        break
+                old_col = obj.get("x", 0) // self.TILE_SIZE
+                old_row = obj.get("y", 0) // self.TILE_SIZE
+                new_col = new_data.get("x", 0) // self.TILE_SIZE
+                new_row = new_data.get("y", 0) // self.TILE_SIZE
+                p = self.parent
                 p.cursor_x, p.cursor_y = old_col, old_row
-            self.refresh_list(select_id=obj_id)
-            TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
-        dlg.Destroy()
+                p.refresh_current_cell()
+                if (old_col, old_row) != (new_col, new_row):
+                    p.cursor_x, p.cursor_y = new_col, new_row
+                    p.refresh_current_cell()
+                    p.cursor_x, p.cursor_y = old_col, old_row
+                self.refresh_list(select_id=obj_id)
+                TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
+            dlg.Destroy()
+        finally:
+            self._editing = False
 
     def on_delete(self, event):
         obj = self._get_selected_obj()
@@ -894,6 +906,7 @@ class MapEditorFrame(wx.Frame):
         fill_item = edit_menu.Append(wx.ID_ANY, "填充选区\tCtrl+F")
         edit_menu.AppendSeparator()
         copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
+        cut_item = edit_menu.Append(wx.ID_ANY, "剪切\tCtrl+X")
         paste_item = edit_menu.Append(wx.ID_ANY, "粘贴\tCtrl+V")
         
         # 对象菜单
@@ -903,6 +916,7 @@ class MapEditorFrame(wx.Frame):
         delete_object_item = object_menu.Append(wx.ID_ANY, "删除对象...\tDelete")
         object_menu.AppendSeparator()
         copy_object_item = object_menu.Append(wx.ID_ANY, "复制对象\tCtrl+Shift+C")
+        cut_object_item = object_menu.Append(wx.ID_ANY, "剪切对象\tCtrl+Shift+X")
         paste_object_item = object_menu.Append(wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
         object_menu.AppendSeparator()
         clear_all_objects_item = object_menu.Append(wx.ID_ANY, "清除所有对象")
@@ -932,6 +946,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
         self.Bind(wx.EVT_MENU, self.on_fill_selection, fill_item)
         self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
+        self.Bind(wx.EVT_MENU, self.cut_selection, cut_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
         self.Bind(wx.EVT_MENU, self.on_goto_cell, goto_item)
         # 绑定对象菜单事件
@@ -939,6 +954,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
         self.Bind(wx.EVT_MENU, self.on_delete_object, delete_object_item)
         self.Bind(wx.EVT_MENU, self.copy_object, copy_object_item)
+        self.Bind(wx.EVT_MENU, self.cut_object, cut_object_item)
         self.Bind(wx.EVT_MENU, self.paste_object, paste_object_item)
         self.Bind(wx.EVT_MENU, self.on_clear_all_objects, clear_all_objects_item)
         self.Bind(wx.EVT_MENU, self.on_open_object_manager, object_manager_item)
@@ -966,6 +982,9 @@ class MapEditorFrame(wx.Frame):
             elif key == ord('C'):        # Ctrl+Shift+C：复制对象
                 self.copy_object(None)
                 return
+            elif key == ord('X'):        # Ctrl+Shift+X：剪切对象
+                self.cut_object(None)
+                return
             elif key == ord('V'):        # Ctrl+Shift+V：粘贴对象
                 self.paste_object(None)
                 return
@@ -982,6 +1001,9 @@ class MapEditorFrame(wx.Frame):
                 return
             elif key == ord('C'):        # Ctrl+C：复制选区
                 self.copy_selection(None)
+                return
+            elif key == ord('X'):        # Ctrl+X：剪切选区
+                self.cut_selection(None)
                 return
             elif key == ord('V'):        # Ctrl+V：粘贴选区
                 self.paste_clipboard(None)
@@ -1424,6 +1446,14 @@ class MapEditorFrame(wx.Frame):
         TTS.speak('复制选区')
 
 
+    def cut_selection(self, event):
+        """剪切选中区域（复制+清除）"""
+        self.copy_selection(event)
+        self.delete_selection(event)
+        TTS.cancel()
+        TTS.speak('剪切选区')
+
+
     def delete_selection(self, event):
         """清空选中单元格/区域"""
         # 获取选区边界
@@ -1537,6 +1567,22 @@ class MapEditorFrame(wx.Frame):
         self.OBJECT_CLIPBOARD = OBJECT_CLIPBOARD
         TTS.cancel()
         TTS.speak(f"已复制对象：{obj.get('name', '')}")
+
+
+    def cut_object(self, event):
+        """剪切对象（复制+删除）"""
+        obj = self.find_object_at(self.cursor_x, self.cursor_y)
+        if not obj:
+            wx.MessageBox("当前光标位置没有对象！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        self.OBJECT_CLIPBOARD = copy.deepcopy(obj)
+        self.object_layers[0]["objects"].remove(obj)
+        self.refresh_current_cell()
+        self.update_status()
+        TTS.cancel()
+        TTS.speak(f"已剪切对象：{obj.get('name', '')}")
+        if self.object_manager_dlg:
+            self.object_manager_dlg.refresh_list()
 
 
     def paste_object(self, event):
