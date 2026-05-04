@@ -1166,7 +1166,7 @@ class MapEditorFrame(wx.Frame):
         TTS.speak("粘贴")
 
     def copy_object(self, event):
-        layer_idx, obj = self.data_manager.find_object_at(
+        _, obj = self.data_manager.find_object_at(
             self.cursor_x, self.cursor_y
         )
         if not obj:
@@ -1180,7 +1180,7 @@ class MapEditorFrame(wx.Frame):
         TTS.speak(f"已复制对象：{obj.get('name', '')}")
 
     def cut_object(self, event):
-        layer_idx, obj = self.data_manager.find_object_at(
+        _, obj = self.data_manager.find_object_at(
             self.cursor_x, self.cursor_y
         )
         if not obj:
@@ -1189,7 +1189,7 @@ class MapEditorFrame(wx.Frame):
             )
             return
         self.object_clipboard = copy.deepcopy(obj)
-        self.data_manager.remove_object(obj.get("id"), layer_idx)
+        self.data_manager.remove_object(obj.get("id"))
         TTS.cancel()
         TTS.speak(f"已剪切对象：{obj.get('name', '')}")
 
@@ -1223,7 +1223,7 @@ class MapEditorFrame(wx.Frame):
         dlg.Destroy()
 
     def on_edit_object(self, event):
-        layer_idx, obj = self.data_manager.find_object_at(
+        _, obj = self.data_manager.find_object_at(
             self.cursor_x, self.cursor_y
         )
         if not obj:
@@ -1238,9 +1238,7 @@ class MapEditorFrame(wx.Frame):
         )
         if dlg.ShowModal() == wx.ID_OK:
             new_obj_data = dlg.get_object_data()
-            self.data_manager.modify_object(
-                obj.get("id"), new_obj_data, layer_idx
-            )
+            self.data_manager.modify_object(obj.get("id"), new_obj_data)
             del self._silent_status
             TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
         else:
@@ -1248,7 +1246,7 @@ class MapEditorFrame(wx.Frame):
         dlg.Destroy()
 
     def on_delete_object(self, event):
-        layer_idx, obj = self.data_manager.find_object_at(
+        _, obj = self.data_manager.find_object_at(
             self.cursor_x, self.cursor_y
         )
         if not obj:
@@ -1263,7 +1261,7 @@ class MapEditorFrame(wx.Frame):
             wx.YES_NO | wx.ICON_QUESTION,
         )
         if result == 2:
-            self.data_manager.remove_object(obj.get("id"), layer_idx)
+            self.data_manager.remove_object(obj.get("id"))
             TTS.speak("已删除对象")
 
     def on_clear_all_objects(self, event):

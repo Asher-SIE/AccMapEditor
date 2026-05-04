@@ -27,7 +27,6 @@ class MapDataManager(wx.EvtHandler):
         self.object_layers = [
             {"type": "objectgroup", "name": "Object Layer 1", "objects": []}
         ]
-        self.active_layer_index = 0
         self.collision_set = set()
         self.map_properties = {"name": "Ground", "bgm": ""}
         self.next_object_id = 1
@@ -99,7 +98,6 @@ class MapDataManager(wx.EvtHandler):
                 {"type": "objectgroup", "name": "Object Layer 1", "objects": []}
             ]
 
-        self.active_layer_index = 0
         self.map_properties = data.get("map_properties", {"name": "Ground", "bgm": ""})
         self.collision_set = set()
         for coord in data.get("collision", {}).get("impassable", []):
@@ -117,7 +115,6 @@ class MapDataManager(wx.EvtHandler):
         self.object_layers = [
             {"type": "objectgroup", "name": "Object Layer 1", "objects": []}
         ]
-        self.active_layer_index = 0
         self.collision_set = set()
         self.map_properties = {"name": "Ground", "bgm": ""}
         self.next_object_id = 1
@@ -168,32 +165,24 @@ class MapDataManager(wx.EvtHandler):
     def set_tiles_bulk(self, changes):
         self.execute(BulkSetTilesCommand(changes))
 
-    def add_object(self, obj_data, layer_idx=None):
-        if layer_idx is None:
-            layer_idx = self.active_layer_index
+    def add_object(self, obj_data):
         obj_data["id"] = self.next_object_id
         self.next_object_id += 1
-        self.execute(AddObjectCommand(layer_idx, obj_data))
+        self.execute(AddObjectCommand(0, obj_data))
 
-    def remove_object(self, obj_id, layer_idx=None):
-        if layer_idx is None:
-            layer_idx = self.active_layer_index
-        obj = self.find_object_by_id(obj_id, layer_idx)
+    def remove_object(self, obj_id):
+        obj = self.find_object_by_id(obj_id)
         if obj is None:
             return False
-        self.execute(RemoveObjectCommand(layer_idx, obj_id))
+        self.execute(RemoveObjectCommand(0, obj_id))
         return True
 
-    def modify_object(self, obj_id, new_data, layer_idx=None):
-        if layer_idx is None:
-            layer_idx = self.active_layer_index
+    def modify_object(self, obj_id, new_data):
         new_data["id"] = obj_id
-        self.execute(ModifyObjectCommand(layer_idx, obj_id, new_data))
+        self.execute(ModifyObjectCommand(0, obj_id, new_data))
 
-    def clear_objects(self, layer_idx=None):
-        if layer_idx is None:
-            layer_idx = self.active_layer_index
-        self.execute(ClearObjectsCommand(layer_idx))
+    def clear_objects(self):
+        self.execute(ClearObjectsCommand(0))
 
     def set_collision(self, x, y, state):
         self.execute(SetCollisionCommand([(x, y, state)]))
@@ -205,12 +194,6 @@ class MapDataManager(wx.EvtHandler):
 
     def resize(self, new_width, new_height):
         self.execute(ResizeMapCommand(new_width, new_height))
-
-    def set_active_layer(self, index):
-        if 0 <= index < len(self.object_layers):
-            old = self.active_layer_index
-            self.active_layer_index = index
-            self._notify("active_layer_changed", old=old, new=index)
 
     def find_object_at(self, tile_x, tile_y):
         for layer_idx, layer in enumerate(self.object_layers):
@@ -255,10 +238,10 @@ class MapDataManager(wx.EvtHandler):
         return " ".join(parts)
 
     def get_active_layer(self):
-        return self.object_layers[self.active_layer_index]
+        return self.object_layers[0]
 
     def get_active_objects(self):
-        return self.get_active_layer().get("objects", [])
+        return self.object_layers[0].get("objects", [])
 
     def is_modified(self):
         if self.width != 200 or self.height != 200:
@@ -273,12 +256,6 @@ class MapDataManager(wx.EvtHandler):
         if self.collision_set:
             return True
         return False
-
-    def get_layer_names(self):
-        return [
-            layer.get("name", f"Layer {i + 1}")
-            for i, layer in enumerate(self.object_layers)
-        ]
 
     def get_object_tile_rect(self, obj):
         tx = obj.get("x", 0) // TILE_SIZE

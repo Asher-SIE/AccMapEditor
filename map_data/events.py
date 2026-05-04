@@ -12,7 +12,6 @@ class MapDataEvent(wx.PyEvent):
     KIND_OBJECT_REMOVED = "object_removed"
     KIND_OBJECT_MODIFIED = "object_modified"
     KIND_OBJECTS_CLEARED = "objects_cleared"
-    KIND_ACTIVE_LAYER_CHANGED = "active_layer_changed"
     KIND_MAP_LOADED = "map_loaded"
     KIND_MAP_CLEARED = "map_cleared"
 

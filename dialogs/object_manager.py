@@ -1,7 +1,6 @@
-import copy
 import wx
 
-from map_data import EVT_MAP_DATA, MapDataEvent
+from map_data import EVT_MAP_DATA
 from dialogs.object_dialog import ObjectDialog
 
 import TTS
@@ -11,7 +10,7 @@ class ObjectManagerDialog(wx.Frame):
     TILE_SIZE = 32
 
     def __init__(self, parent, data_manager):
-        super().__init__(parent, title="对象管理器", size=(620, 460))
+        super().__init__(parent, title="对象管理器", size=(620, 420))
         self.parent = parent
         self.data_manager = data_manager
         self._editing = False
@@ -20,24 +19,11 @@ class ObjectManagerDialog(wx.Frame):
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        layer_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        layer_sizer.Add(
-            wx.StaticText(panel, label="对象层："),
-            0,
-            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
-            5,
-        )
-        layer_names = data_manager.get_layer_names()
-        self.layer_choice = wx.Choice(panel, choices=layer_names)
-        self.layer_choice.SetSelection(data_manager.active_layer_index)
-        layer_sizer.Add(self.layer_choice, 1, wx.EXPAND)
-        main_sizer.Add(layer_sizer, 0, wx.EXPAND | wx.ALL, 5)
-
         self.obj_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
         self.obj_list.InsertColumn(0, "ID", width=50)
         self.obj_list.InsertColumn(1, "名称", width=140)
         self.obj_list.InsertColumn(2, "类型", width=100)
-        self.obj_list.InsertColumn(3, "坐标(列,行)", width=110)
+        self.obj_list.InsertColumn(3, "坐标", width=70)
         self.obj_list.InsertColumn(4, "属性数量", width=80)
         main_sizer.Add(self.obj_list, 1, wx.EXPAND | wx.ALL, 5)
 
@@ -54,7 +40,6 @@ class ObjectManagerDialog(wx.Frame):
         self.populate_list()
         self.obj_list.SetFocus()
 
-        self.layer_choice.Bind(wx.EVT_CHOICE, self.on_layer_changed)
         self.obj_list.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_selection_changed)
         self.obj_list.Bind(wx.EVT_KEY_DOWN, self.on_list_keydown)
         self.btn_jump.Bind(wx.EVT_BUTTON, self.on_jump)
@@ -76,30 +61,15 @@ class ObjectManagerDialog(wx.Frame):
             "object_removed",
             "object_modified",
             "objects_cleared",
-            "active_layer_changed",
             "map_loaded",
             "map_cleared",
         ):
-            if kind == "active_layer_changed":
-                self.layer_choice.SetSelection(event.data.get("new", 0))
-            elif kind in ("map_loaded", "map_cleared"):
-                self._update_layer_choices()
             self.refresh_list()
         event.Skip()
 
-    def _update_layer_choices(self):
-        self.layer_choice.Clear()
-        self.layer_choice.AppendItems(self.data_manager.get_layer_names())
-        self.layer_choice.SetSelection(self.data_manager.active_layer_index)
-
-    def on_layer_changed(self, event):
-        idx = self.layer_choice.GetSelection()
-        self.data_manager.set_active_layer(idx)
-
     def populate_list(self):
         self.obj_list.DeleteAllItems()
-        objects = self.data_manager.get_active_objects()
-        for obj in objects:
+        for obj in self.data_manager.get_active_objects():
             tile_x = obj.get("x", 0) // self.TILE_SIZE
             tile_y = obj.get("y", 0) // self.TILE_SIZE
             idx = self.obj_list.InsertItem(
@@ -127,9 +97,7 @@ class ObjectManagerDialog(wx.Frame):
             obj_id = int(self.obj_list.GetItemText(idx, 0))
         except ValueError:
             return None
-        return self.data_manager.find_object_by_id(
-            obj_id, self.data_manager.active_layer_index
-        )
+        return self.data_manager.find_object_by_id(obj_id)
 
     def on_selection_changed(self, event):
         event.Skip()
@@ -180,9 +148,7 @@ class ObjectManagerDialog(wx.Frame):
             )
             if dlg.ShowModal() == wx.ID_OK:
                 new_data = dlg.get_object_data()
-                self.data_manager.modify_object(
-                    obj_id, new_data, self.data_manager.active_layer_index
-                )
+                self.data_manager.modify_object(obj_id, new_data)
                 TTS.cancel()
                 TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
             dlg.Destroy()
@@ -200,9 +166,7 @@ class ObjectManagerDialog(wx.Frame):
             wx.YES_NO | wx.ICON_QUESTION,
         )
         if result == 2:
-            self.data_manager.remove_object(
-                obj.get("id"), self.data_manager.active_layer_index
-            )
+            self.data_manager.remove_object(obj.get("id"))
             TTS.cancel()
             TTS.speak("已删除对象")
 
