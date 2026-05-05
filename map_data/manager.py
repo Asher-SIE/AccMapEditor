@@ -192,6 +192,9 @@ class MapDataManager(wx.EvtHandler):
         self.set_collision(x, y, state)
         return state
 
+    def set_collision_bulk(self, changes):
+        self.execute(SetCollisionCommand(changes))
+
     def resize(self, new_width, new_height):
         self.execute(ResizeMapCommand(new_width, new_height))
 

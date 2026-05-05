@@ -643,9 +643,15 @@ class MapEditorFrame(wx.Frame):
             wx.ID_ANY, "对象管理器...\tCtrl+Shift+M"
         )
 
+        collision_menu = wx.Menu()
+        toggle_collision_item = collision_menu.Append(
+            wx.ID_ANY, "标记/取消碰撞\tSpace"
+        )
+
         menubar.Append(file_menu, "文件 &F")
         menubar.Append(edit_menu, "编辑 &E")
         menubar.Append(object_menu, "对象 &O")
+        menubar.Append(collision_menu, "碰撞")
         self.SetMenuBar(menubar)
 
         self.Bind(wx.EVT_MENU, self.on_open, open_item)
@@ -675,6 +681,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.paste_object, paste_object_item)
         self.Bind(wx.EVT_MENU, self.on_clear_all_objects, clear_all_objects_item)
         self.Bind(wx.EVT_MENU, self.on_open_object_manager, object_manager_item)
+        self.Bind(wx.EVT_MENU, self._on_toggle_collision, toggle_collision_item)
         self.Bind(wx.EVT_CLOSE, self.on_minimize)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
@@ -760,10 +767,33 @@ class MapEditorFrame(wx.Frame):
             return
         elif key == wx.WXK_SPACE:
             if self.grid.HasFocus():
-                self.data_manager.toggle_collision(self.cursor_x, self.cursor_y)
-                self.update_status()
+                self._on_toggle_collision(None)
             return
         event.Skip()
+
+    def _on_toggle_collision(self, event):
+        dm = self.data_manager
+        bounds = self.get_selection_bounds()
+        if bounds:
+            left, top, right, bottom = bounds
+            target_state = (self.cursor_x, self.cursor_y) not in dm.collision_set
+            changes = []
+            for y in range(top, bottom + 1):
+                for x in range(left, right + 1):
+                    changes.append((x, y, target_state))
+            dm.set_collision_bulk(changes)
+            self._clear_selection()
+            self.update_status()
+            TTS.cancel()
+            action = "标记碰撞" if target_state else "取消碰撞"
+            count = len(changes)
+            TTS.speak(f"{action} {count} 个格子")
+        else:
+            state = dm.toggle_collision(self.cursor_x, self.cursor_y)
+            self.update_status()
+            TTS.cancel()
+            action = "标记碰撞" if state else "取消碰撞"
+            TTS.speak(f"{action}")
 
     def is_map_modified(self):
         return self.data_manager.is_modified()
@@ -1007,14 +1037,6 @@ class MapEditorFrame(wx.Frame):
                     self.on_set_tile(None)
                 return
         event.Skip()
-
-        if moved:
-            self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
-            self.grid.SelectBlock(
-                self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x
-            )
-            self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
-            self.update_status()
 
     def on_selection_start(self, event):
         self.selection_start = (self.cursor_x, self.cursor_y)
@@ -1358,6 +1380,34 @@ class MapEditorFrame(wx.Frame):
         json_str = re.sub(
             r'"data":\s*\[(.*?)\]', format_data, json_str, flags=re.DOTALL
         )
+
+        def format_impassable_section(s):
+            marker = '"impassable": ['
+            start = s.find(marker)
+            if start == -1:
+                return s
+            bracket_pos = start + len(marker) - 1
+            depth = 1
+            pos = bracket_pos + 1
+            while pos < len(s) and depth > 0:
+                if s[pos] == '[':
+                    depth += 1
+                elif s[pos] == ']':
+                    depth -= 1
+                pos += 1
+            end = pos
+            content = s[bracket_pos + 1:end - 1]
+            arr = json.loads("[" + content + "]")
+            if not arr:
+                return s[:start] + '"impassable": []' + s[end:]
+            pairs = [f"[{p[0]}, {p[1]}]" for p in arr]
+            line_groups = [
+                ", ".join(pairs[i:i + 50]) for i in range(0, len(pairs), 50)
+            ]
+            replacement = '"impassable": [\n      ' + ",\n      ".join(line_groups) + "\n    ]"
+            return s[:start] + replacement + s[end:]
+
+        json_str = format_impassable_section(json_str)
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(json_str)
