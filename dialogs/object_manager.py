@@ -165,7 +165,7 @@ class ObjectManagerDialog(wx.Frame):
             "确认",
             wx.YES_NO | wx.ICON_QUESTION,
         )
-        if result == 2:
+        if int(result) == 2:
             self.data_manager.remove_object(obj.get("id"))
             TTS.cancel()
             TTS.speak("已删除对象")

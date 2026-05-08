@@ -17,6 +17,10 @@ TILE_DEFINITIONS = {}
 
 CLIPBOARD = None
 
+WX_YES = 2
+WX_NO = 8
+WX_CANCEL = 16
+
 
 class TileSelectionDialog(wx.Dialog):
     def __init__(self, parent, tile_defs):
@@ -421,7 +425,7 @@ class CustomTileDialog(wx.Frame):
         result = wx.MessageBox(
             "确定要退出吗？", "提示", wx.YES_NO | wx.ICON_QUESTION
         )
-        if result == 8:
+        if int(result) == WX_NO:
             return
         self.notify_parent()
         self.Destroy()
@@ -454,6 +458,7 @@ class MapEditorFrame(wx.Frame):
         self.cursor_x = 0
         self.cursor_y = 0
         self.current_file = None
+        self._clean_map_state = None
 
         global TILE_DEFINITIONS
         TILE_DEFINITIONS = self.load_tiled_data()
@@ -469,6 +474,7 @@ class MapEditorFrame(wx.Frame):
         self.init_ui()
         self.create_menu()
         self._subscribe_events()
+        self._mark_map_clean()
         self.update_status()
         TTS.init_engine()
         TTS.speak("编辑器启动")
@@ -514,6 +520,46 @@ class MapEditorFrame(wx.Frame):
                 cx, cy = tx + dx, ty + dy
                 if 0 <= cx < dm.width and 0 <= cy < dm.height:
                     self._refresh_cell(cx, cy)
+
+    def _get_map_state(self):
+        data = self.data_manager.to_dict(self.tile_definitions)
+        return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+    def _mark_map_clean(self):
+        self._clean_map_state = self._get_map_state()
+
+    def _confirm_save_if_modified(self):
+        if not self.is_map_modified():
+            return True
+
+        result = wx.MessageBox(
+            "当前地图有未保存的修改，是否保存？\n\n"
+            "选择“是”保存后继续，选择“否”不保存继续，选择“取消”停止操作。",
+            "未保存的修改",
+            wx.YES_NO | wx.CANCEL | wx.ICON_QUESTION,
+        )
+        result = int(result)
+        if result == WX_YES:
+            return self.save_current_file()
+        if result == WX_NO:
+            return True
+        if result == WX_CANCEL:
+            return False
+        return False
+
+    def save_current_file(self):
+        if self.current_file:
+            return self._save_map_to_path(self.current_file)
+        return self.on_save_file()
+
+    def _save_map_to_path(self, filepath):
+        if not self.save_to_tiled_json(filepath):
+            return False
+        self.current_file = filepath
+        self._mark_map_clean()
+        self.update_title()
+        wx.MessageBox(f"地图已保存至:\n{filepath}", "成功", wx.OK)
+        return True
 
     def load_tiled_data(self):
         config_file = "./tile_definitions.json"
@@ -796,40 +842,35 @@ class MapEditorFrame(wx.Frame):
             TTS.speak(f"{action}")
 
     def is_map_modified(self):
-        return self.data_manager.is_modified()
+        return self._clean_map_state != self._get_map_state()
 
     def on_minimize(self, event):
         self.Iconize()
 
     def on_close_file(self, event):
-        if self.is_map_modified():
-            result = wx.MessageBox(
-                "地图有未保存的更改，是否关闭？",
-                "提示",
-                wx.YES_NO | wx.ICON_QUESTION,
-            )
-            if result == 2:
-                self.reset_to_default_map()
-            elif result == 8:
-                return
+        if not self._confirm_save_if_modified():
+            return
+        self.reset_to_default_map()
 
     def reset_to_default_map(self):
         self.data_manager.clear()
         self.cursor_x = 0
         self.cursor_y = 0
+        self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
+        self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
+        self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
         self.current_file = None
+        self._clear_selection()
+        self._mark_map_clean()
         TTS.speak("地图已重置")
         self.update_title()
 
     def on_exit(self, event):
-        if self.is_map_modified():
-            wx.MessageBox(
-                "存在为保存的修改，请先保存再退出！",
-                "提示",
-                wx.OK | wx.ICON_WARNING,
-            )
-            return
-        self.Destroy()
+        result = wx.MessageBox(
+            "是否退出地图编辑器？", "确认退出", wx.YES_NO | wx.ICON_QUESTION
+        )
+        if int(result) == WX_YES:
+            self.Destroy()
 
     def on_save_file(self):
         with wx.FileDialog(
@@ -839,7 +880,8 @@ class MapEditorFrame(wx.Frame):
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
         ) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
-                self.save_to_tiled_json(dlg.GetPath())
+                return self._save_map_to_path(dlg.GetPath())
+        return False
 
     def on_resize(self, event):
         dm = self.data_manager
@@ -1282,7 +1324,7 @@ class MapEditorFrame(wx.Frame):
             "确认",
             wx.YES_NO | wx.ICON_QUESTION,
         )
-        if result == 2:
+        if int(result) == WX_YES:
             self.data_manager.remove_object(obj.get("id"))
             TTS.speak("已删除对象")
 
@@ -1290,7 +1332,7 @@ class MapEditorFrame(wx.Frame):
         result = wx.MessageBox(
             "确定要清除所有对象吗？", "确认", wx.YES_NO | wx.ICON_QUESTION
         )
-        if result == 2:
+        if int(result) == WX_YES:
             self.data_manager.clear_objects()
             TTS.speak("已清除所有对象")
 
@@ -1301,6 +1343,9 @@ class MapEditorFrame(wx.Frame):
         self.object_manager_dlg = ObjectManagerDialog(self, self.data_manager)
 
     def on_open(self, event):
+        if not self._confirm_save_if_modified():
+            return
+
         with wx.FileDialog(
             self,
             "打开地图",
@@ -1309,9 +1354,10 @@ class MapEditorFrame(wx.Frame):
         ) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
                 filepath = dlg.GetPath()
-                self.current_file = filepath
-                self.load_from_tiled_json(filepath)
-                self.update_title()
+                if self.load_from_tiled_json(filepath):
+                    self.current_file = filepath
+                    self._mark_map_clean()
+                    self.update_title()
 
     def update_title(self):
         if self.current_file:
@@ -1327,10 +1373,13 @@ class MapEditorFrame(wx.Frame):
 
             if not self.data_manager.load_from_dict(data):
                 wx.MessageBox("地图数据无效！", "错误", wx.OK | wx.ICON_ERROR)
-                return
+                return False
 
             self.cursor_x = 0
             self.cursor_y = 0
+            self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
+            self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
+            self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
             self.update_status()
 
             dm = self.data_manager
@@ -1338,9 +1387,11 @@ class MapEditorFrame(wx.Frame):
                 f"成功加载地图：{dm.width}x{dm.height}", "提示", wx.OK
             )
             TTS.speak(f"已加载地图，宽度{dm.width}，高度{dm.height}")
+            return True
 
         except Exception as e:
             wx.MessageBox(f"加载失败：{str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+            return False
 
     def rebuild_grid(self):
         dm = self.data_manager
@@ -1361,57 +1412,65 @@ class MapEditorFrame(wx.Frame):
         self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
 
     def on_save(self, event):
-        self.on_save_file()
+        self.save_current_file()
 
     def save_to_tiled_json(self, filepath):
-        tiled_json = self.data_manager.to_dict(self.tile_definitions)
+        try:
+            tiled_json = self.data_manager.to_dict(self.tile_definitions)
+            json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
 
-        json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
+            def format_data(match):
+                content = match.group(1)
+                arr = json.loads("[" + content + "]")
+                lines = [
+                    ", ".join(str(v) for v in arr[i : i + 50])
+                    for i in range(0, len(arr), 50)
+                ]
+                return '"data": [\n    ' + ",\n    ".join(lines) + "\n  ]"
 
-        def format_data(match):
-            content = match.group(1)
-            arr = json.loads("[" + content + "]")
-            lines = [
-                ", ".join(str(v) for v in arr[i : i + 50])
-                for i in range(0, len(arr), 50)
-            ]
-            return '"data": [\n    ' + ",\n    ".join(lines) + "\n  ]"
+            json_str = re.sub(
+                r'"data":\s*\[(.*?)\]', format_data, json_str, flags=re.DOTALL
+            )
 
-        json_str = re.sub(
-            r'"data":\s*\[(.*?)\]', format_data, json_str, flags=re.DOTALL
-        )
+            def format_impassable_section(s):
+                marker = '"impassable": ['
+                start = s.find(marker)
+                if start == -1:
+                    return s
+                bracket_pos = start + len(marker) - 1
+                depth = 1
+                pos = bracket_pos + 1
+                while pos < len(s) and depth > 0:
+                    if s[pos] == '[':
+                        depth += 1
+                    elif s[pos] == ']':
+                        depth -= 1
+                    pos += 1
+                end = pos
+                content = s[bracket_pos + 1:end - 1]
+                arr = json.loads("[" + content + "]")
+                if not arr:
+                    return s[:start] + '"impassable": []' + s[end:]
+                pairs = [f"[{p[0]}, {p[1]}]" for p in arr]
+                line_groups = [
+                    ", ".join(pairs[i:i + 50])
+                    for i in range(0, len(pairs), 50)
+                ]
+                replacement = (
+                    '"impassable": [\n      '
+                    + ",\n      ".join(line_groups)
+                    + "\n    ]"
+                )
+                return s[:start] + replacement + s[end:]
 
-        def format_impassable_section(s):
-            marker = '"impassable": ['
-            start = s.find(marker)
-            if start == -1:
-                return s
-            bracket_pos = start + len(marker) - 1
-            depth = 1
-            pos = bracket_pos + 1
-            while pos < len(s) and depth > 0:
-                if s[pos] == '[':
-                    depth += 1
-                elif s[pos] == ']':
-                    depth -= 1
-                pos += 1
-            end = pos
-            content = s[bracket_pos + 1:end - 1]
-            arr = json.loads("[" + content + "]")
-            if not arr:
-                return s[:start] + '"impassable": []' + s[end:]
-            pairs = [f"[{p[0]}, {p[1]}]" for p in arr]
-            line_groups = [
-                ", ".join(pairs[i:i + 50]) for i in range(0, len(pairs), 50)
-            ]
-            replacement = '"impassable": [\n      ' + ",\n      ".join(line_groups) + "\n    ]"
-            return s[:start] + replacement + s[end:]
+            json_str = format_impassable_section(json_str)
 
-        json_str = format_impassable_section(json_str)
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(json_str)
-        wx.MessageBox(f"地图已保存至:\n{filepath}", "成功", wx.OK)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(json_str)
+            return True
+        except Exception as e:
+            wx.MessageBox(f"保存失败：{str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+            return False
 
 
 class MapEditorApp(wx.App):
