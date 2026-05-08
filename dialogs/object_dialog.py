@@ -1,4 +1,302 @@
+import copy
+
 import wx
+
+
+VALUE_TYPE_LABELS = {
+    "string": "文本",
+    "number": "数字",
+    "boolean": "布尔",
+    "array": "数组",
+    "object": "对象",
+}
+
+VALUE_TYPE_KEYS = {v: k for k, v in VALUE_TYPE_LABELS.items()}
+
+
+def infer_value_type(value):
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "string"
+
+
+def format_property_value(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return f"[{len(value)}项]"
+    if isinstance(value, dict):
+        return f"{{{len(value)}字段}}"
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+class StructuredValueDialog(wx.Dialog):
+    def __init__(self, parent, title, value=None, name="", require_name=False):
+        super().__init__(parent, title=title)
+        self.require_name = require_name
+        self.value = copy.deepcopy(value) if value is not None else ""
+        self.result_name = name
+        self.result_value = None
+        self.object_keys = []
+
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        if self.require_name:
+            name_sizer = wx.BoxSizer(wx.HORIZONTAL)
+            name_sizer.Add(
+                wx.StaticText(self, label="名称："),
+                0,
+                wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+                5,
+            )
+            self.name_input = wx.TextCtrl(self, value=name)
+            name_sizer.Add(self.name_input, 1, wx.EXPAND)
+            main_sizer.Add(name_sizer, 0, wx.EXPAND | wx.ALL, 8)
+        else:
+            self.name_input = None
+
+        type_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        type_sizer.Add(
+            wx.StaticText(self, label="值类型："),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+            5,
+        )
+        self.type_choice = wx.Choice(self, choices=list(VALUE_TYPE_KEYS.keys()))
+        type_label = VALUE_TYPE_LABELS[infer_value_type(self.value)]
+        self.type_choice.SetStringSelection(type_label)
+        type_sizer.Add(self.type_choice, 1, wx.EXPAND)
+        main_sizer.Add(type_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        self.value_panel = wx.Panel(self)
+        self.value_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.value_panel.SetSizer(self.value_sizer)
+        main_sizer.Add(self.value_panel, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 8)
+
+        self.SetSizer(main_sizer)
+        self.Bind(wx.EVT_CHOICE, self.on_type_changed, self.type_choice)
+        self.Bind(wx.EVT_BUTTON, self.on_ok, id=wx.ID_OK)
+
+        self.rebuild_value_editor()
+        self.SetSize((520, 420))
+
+    def get_selected_type(self):
+        return VALUE_TYPE_KEYS[self.type_choice.GetStringSelection()]
+
+    def default_value_for_type(self, value_type):
+        if value_type == "string":
+            return ""
+        if value_type == "number":
+            return 0
+        if value_type == "boolean":
+            return False
+        if value_type == "array":
+            return []
+        if value_type == "object":
+            return {}
+        return ""
+
+    def on_type_changed(self, event):
+        selected_type = self.get_selected_type()
+        if infer_value_type(self.value) != selected_type:
+            self.value = self.default_value_for_type(selected_type)
+        self.rebuild_value_editor()
+
+    def clear_value_sizer(self):
+        for child in self.value_panel.GetChildren():
+            child.Destroy()
+        self.value_sizer.Clear(delete_windows=False)
+
+    def rebuild_value_editor(self):
+        self.clear_value_sizer()
+        value_type = self.get_selected_type()
+
+        if value_type == "string":
+            self.scalar_input = wx.TextCtrl(self.value_panel, value=str(self.value))
+            self.value_sizer.Add(self.scalar_input, 0, wx.EXPAND | wx.BOTTOM, 5)
+        elif value_type == "number":
+            self.scalar_input = wx.TextCtrl(self.value_panel, value=str(self.value))
+            self.value_sizer.Add(self.scalar_input, 0, wx.EXPAND | wx.BOTTOM, 5)
+        elif value_type == "boolean":
+            self.bool_input = wx.CheckBox(self.value_panel, label="启用 / true")
+            self.bool_input.SetValue(bool(self.value))
+            self.value_sizer.Add(self.bool_input, 0, wx.BOTTOM, 5)
+        elif value_type == "array":
+            if not isinstance(self.value, list):
+                self.value = []
+            self.build_array_editor()
+        elif value_type == "object":
+            if not isinstance(self.value, dict):
+                self.value = {}
+            self.build_object_editor()
+
+        self.value_panel.Layout()
+        self.Layout()
+
+    def build_array_editor(self):
+        self.array_list = wx.ListBox(self.value_panel, style=wx.LB_SINGLE)
+        self.refresh_array_list()
+        self.value_sizer.Add(self.array_list, 1, wx.EXPAND | wx.BOTTOM, 5)
+
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_add = wx.Button(self.value_panel, label="添加项")
+        btn_edit = wx.Button(self.value_panel, label="编辑项")
+        btn_del = wx.Button(self.value_panel, label="删除项")
+        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_edit, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_del, 1)
+        self.value_sizer.Add(btn_sizer, 0, wx.EXPAND)
+
+        btn_add.Bind(wx.EVT_BUTTON, self.on_add_array_item)
+        btn_edit.Bind(wx.EVT_BUTTON, self.on_edit_array_item)
+        btn_del.Bind(wx.EVT_BUTTON, self.on_delete_array_item)
+
+    def refresh_array_list(self):
+        self.array_list.Clear()
+        for idx, item in enumerate(self.value, start=1):
+            self.array_list.Append(f"第{idx}项 = {format_property_value(item)}")
+
+    def on_add_array_item(self, event):
+        dlg = StructuredValueDialog(self, "添加数组项", value="")
+        if dlg.ShowModal() == wx.ID_OK:
+            self.value.append(dlg.get_value())
+            self.refresh_array_list()
+        dlg.Destroy()
+
+    def on_edit_array_item(self, event):
+        sel = self.array_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择数组项！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        dlg = StructuredValueDialog(self, "编辑数组项", value=self.value[sel])
+        if dlg.ShowModal() == wx.ID_OK:
+            self.value[sel] = dlg.get_value()
+            self.refresh_array_list()
+        dlg.Destroy()
+
+    def on_delete_array_item(self, event):
+        sel = self.array_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择数组项！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        del self.value[sel]
+        self.refresh_array_list()
+
+    def build_object_editor(self):
+        self.object_list = wx.ListBox(self.value_panel, style=wx.LB_SINGLE)
+        self.refresh_object_list()
+        self.value_sizer.Add(self.object_list, 1, wx.EXPAND | wx.BOTTOM, 5)
+
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_add = wx.Button(self.value_panel, label="添加字段")
+        btn_edit = wx.Button(self.value_panel, label="编辑字段")
+        btn_del = wx.Button(self.value_panel, label="删除字段")
+        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_edit, 1, wx.RIGHT, 5)
+        btn_sizer.Add(btn_del, 1)
+        self.value_sizer.Add(btn_sizer, 0, wx.EXPAND)
+
+        btn_add.Bind(wx.EVT_BUTTON, self.on_add_object_field)
+        btn_edit.Bind(wx.EVT_BUTTON, self.on_edit_object_field)
+        btn_del.Bind(wx.EVT_BUTTON, self.on_delete_object_field)
+
+    def refresh_object_list(self):
+        self.object_list.Clear()
+        self.object_keys = list(self.value.keys())
+        for key in self.object_keys:
+            self.object_list.Append(f"{key} = {format_property_value(self.value[key])}")
+
+    def on_add_object_field(self, event):
+        dlg = StructuredValueDialog(self, "添加字段", value="", require_name=True)
+        if dlg.ShowModal() == wx.ID_OK:
+            name = dlg.get_name()
+            if name in self.value:
+                wx.MessageBox("字段名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                self.value[name] = dlg.get_value()
+                self.refresh_object_list()
+        dlg.Destroy()
+
+    def on_edit_object_field(self, event):
+        sel = self.object_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择字段！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        old_name = self.object_keys[sel]
+        dlg = StructuredValueDialog(
+            self,
+            "编辑字段",
+            value=self.value[old_name],
+            name=old_name,
+            require_name=True,
+        )
+        if dlg.ShowModal() == wx.ID_OK:
+            new_name = dlg.get_name()
+            if new_name != old_name and new_name in self.value:
+                wx.MessageBox("字段名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                if new_name != old_name:
+                    del self.value[old_name]
+                self.value[new_name] = dlg.get_value()
+                self.refresh_object_list()
+        dlg.Destroy()
+
+    def on_delete_object_field(self, event):
+        sel = self.object_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择字段！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        del self.value[self.object_keys[sel]]
+        self.refresh_object_list()
+
+    def parse_number(self, text):
+        text = text.strip()
+        if not text:
+            raise ValueError("数字不能为空")
+        if any(ch in text for ch in (".", "e", "E")):
+            return float(text)
+        return int(text)
+
+    def on_ok(self, event):
+        if self.require_name:
+            name = self.name_input.GetValue().strip()
+            if not name:
+                wx.MessageBox("名称不能为空！", "提示", wx.OK | wx.ICON_WARNING)
+                return
+            self.result_name = name
+
+        value_type = self.get_selected_type()
+        try:
+            if value_type == "string":
+                self.result_value = self.scalar_input.GetValue()
+            elif value_type == "number":
+                self.result_value = self.parse_number(self.scalar_input.GetValue())
+            elif value_type == "boolean":
+                self.result_value = self.bool_input.GetValue()
+            elif value_type in ("array", "object"):
+                self.result_value = copy.deepcopy(self.value)
+        except ValueError as exc:
+            wx.MessageBox(str(exc), "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        event.Skip()
+
+    def get_name(self):
+        return self.result_name
+
+    def get_value(self):
+        return self.result_value
 
 
 class ObjectDialog(wx.Dialog):
@@ -75,14 +373,17 @@ class ObjectDialog(wx.Dialog):
         sizer.Add(wx.StaticText(self, label="自定义属性："), 0, wx.LEFT | wx.TOP, 10)
 
         self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 80))
-        self.properties = self.obj_data.get("properties", {}).copy()
+        self.properties = copy.deepcopy(self.obj_data.get("properties", {}))
+        self.property_keys = []
         self.refresh_prop_list()
         sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
 
         prop_btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.btn_add_prop = wx.Button(self, label="添加属性")
+        self.btn_edit_prop = wx.Button(self, label="编辑")
         self.btn_del_prop = wx.Button(self, label="删除")
         prop_btn_sizer.Add(self.btn_add_prop, 1, wx.RIGHT, 5)
+        prop_btn_sizer.Add(self.btn_edit_prop, 1, wx.RIGHT, 5)
         prop_btn_sizer.Add(self.btn_del_prop, 1)
         sizer.Add(prop_btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
 
@@ -93,6 +394,7 @@ class ObjectDialog(wx.Dialog):
         self.SetSize((400, 450))
 
         self.Bind(wx.EVT_BUTTON, self.on_add_prop, self.btn_add_prop)
+        self.Bind(wx.EVT_BUTTON, self.on_edit_prop, self.btn_edit_prop)
         self.Bind(wx.EVT_BUTTON, self.on_del_prop, self.btn_del_prop)
 
     def Validate(self):
@@ -110,18 +412,45 @@ class ObjectDialog(wx.Dialog):
 
     def refresh_prop_list(self):
         self.prop_list.Clear()
-        for name, value in self.properties.items():
-            self.prop_list.Append(f"{name}={value}")
+        self.property_keys = list(self.properties.keys())
+        for name in self.property_keys:
+            value = self.properties[name]
+            self.prop_list.Append(f"{name} = {format_property_value(value)}")
 
     def on_add_prop(self, event):
-        dlg = wx.TextEntryDialog(
-            self, "输入属性名和值（格式：name=value）", "添加属性", ""
+        dlg = StructuredValueDialog(
+            self, "添加属性", value="", require_name=True
         )
         if dlg.ShowModal() == wx.ID_OK:
-            text = dlg.GetValue()
-            if "=" in text:
-                name, value = text.split("=", 1)
-                self.properties[name.strip()] = value.strip()
+            name = dlg.get_name()
+            if name in self.properties:
+                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                self.properties[name] = dlg.get_value()
+                self.refresh_prop_list()
+        dlg.Destroy()
+
+    def on_edit_prop(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要编辑的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        old_name = self.property_keys[sel]
+        dlg = StructuredValueDialog(
+            self,
+            "编辑属性",
+            value=self.properties[old_name],
+            name=old_name,
+            require_name=True,
+        )
+        if dlg.ShowModal() == wx.ID_OK:
+            new_name = dlg.get_name()
+            if new_name != old_name and new_name in self.properties:
+                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                if new_name != old_name:
+                    del self.properties[old_name]
+                self.properties[new_name] = dlg.get_value()
                 self.refresh_prop_list()
         dlg.Destroy()
 
@@ -130,8 +459,7 @@ class ObjectDialog(wx.Dialog):
         if sel == wx.NOT_FOUND:
             wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
             return
-        text = self.prop_list.GetString(sel)
-        name = text.split("=")[0]
+        name = self.property_keys[sel]
         del self.properties[name]
         self.refresh_prop_list()
 
