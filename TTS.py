@@ -7,12 +7,13 @@ from ctypes import c_int, c_wchar_p
 DLL_NAME = "nvdaControllerClient32.dll"
 
 _dll = None
+_dll_dir_handle = None
 _initialized = False
 
 
 def _app_dir():
-    if hasattr(sys, "_MEIPASS"):
-        return sys._MEIPASS
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 
@@ -21,7 +22,7 @@ def _dll_path():
 
 
 def _load_dll():
-    global _dll
+    global _dll, _dll_dir_handle
     if _dll is not None:
         return _dll
 
@@ -31,6 +32,10 @@ def _load_dll():
         return None
 
     try:
+        app_dir = _app_dir()
+        if hasattr(os, "add_dll_directory"):
+            _dll_dir_handle = os.add_dll_directory(app_dir)
+        os.environ["PATH"] = app_dir + os.pathsep + os.environ.get("PATH", "")
         dll = ctypes.CDLL(path)
     except OSError as e:
         print(f"DLL加载失败: {e}")

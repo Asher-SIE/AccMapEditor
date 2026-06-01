@@ -5,11 +5,7 @@ a = Analysis(
     ['MapEditor.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('nvdaControllerClient32.dll', '.'),
-        ('ZDSRAPI.dll', '.'),
-        ('ZDSRAPI.ini', '.'),
-    ],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
