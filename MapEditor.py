@@ -2,7 +2,6 @@ import copy
 import ctypes
 import json
 import os
-import re
 import TTS
 import wx
 import wx.grid as gridlib
@@ -1418,19 +1417,6 @@ class MapEditorFrame(wx.Frame):
         try:
             tiled_json = self.data_manager.to_dict(self.tile_definitions)
             json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
-
-            def format_data(match):
-                content = match.group(1)
-                arr = json.loads("[" + content + "]")
-                lines = [
-                    ", ".join(str(v) for v in arr[i : i + 50])
-                    for i in range(0, len(arr), 50)
-                ]
-                return '"data": [\n    ' + ",\n    ".join(lines) + "\n  ]"
-
-            json_str = re.sub(
-                r'"data":\s*\[(.*?)\]', format_data, json_str, flags=re.DOTALL
-            )
 
             def format_impassable_section(s):
                 marker = '"impassable": ['

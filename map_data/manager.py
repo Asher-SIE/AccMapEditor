@@ -72,7 +72,10 @@ class MapDataManager(wx.EvtHandler):
         for layer in layers:
             layer_type = layer.get("type", "")
             if layer_type == "tilelayer":
-                layer_data = layer.get("data", [])
+                if "data" in layer:
+                    layer_data = layer.get("data", [])
+                else:
+                    layer_data = self._decode_rle_data(layer.get("data_rle", []))
                 self.map_data = []
                 for y in range(new_height):
                     row = []
@@ -136,7 +139,7 @@ class MapDataManager(wx.EvtHandler):
             },
             "layers": [
                 {
-                    "data": data,
+                    "data_rle": self._encode_rle_data(data),
                     "width": self.width,
                     "height": self.height,
                     "opacity": 1,
@@ -158,6 +161,35 @@ class MapDataManager(wx.EvtHandler):
                     tile_info.get("properties", {}).pop("passable", None)
             tiled_json["tile_definitions"] = export_defs
         return tiled_json
+
+    def _decode_rle_data(self, data_rle):
+        result = []
+        for pair in data_rle:
+            if not isinstance(pair, list) or len(pair) < 2:
+                continue
+            tile_id = pair[0]
+            count = int(pair[1])
+            if count <= 0:
+                continue
+            result.extend([tile_id] * count)
+        return result
+
+    def _encode_rle_data(self, data):
+        if not data:
+            return []
+
+        result = []
+        current = data[0]
+        count = 1
+        for value in data[1:]:
+            if value == current:
+                count += 1
+            else:
+                result.append([current, count])
+                current = value
+                count = 1
+        result.append([current, count])
+        return result
 
     def set_tile(self, x, y, value):
         self.execute(SetTileCommand(x, y, value))
