@@ -4,6 +4,7 @@ venv/
 build/
 dist/
 MapEditor/
+.claude/
 # Python 字节码和缓存
 __pycache__/
 *.py[cod]
@@ -23,7 +24,8 @@ __pycache__/
 # Windows 系统文件
 Thumbs.db
 ehthumbs.db
-Desktop.ini
+*.ini
+*.dll
 # 临时文件
 [Oo]bjects/
 *~
@@ -35,3 +37,4 @@ Desktop.ini
 # Sublime Text
 *.sublime-project
 *.sublime-workspace
+        *.code-workspace
