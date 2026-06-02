@@ -49,24 +49,13 @@ class TileSelectionDialog(wx.Dialog):
                 name = v
                 props = {}
 
-            source_info = tile_sources.get(k, {})
-            source = source_info.get("source")
-            if source == "map":
-                prefix = "[地图] "
-            elif source == "root_conflict":
-                prefix = f"[根目录冲突] {source_info.get('original_id')} -> "
-            elif source == "root":
-                prefix = "[根目录] "
-            else:
-                prefix = ""
-
             if props:
                 prop_str = ", ".join(
                     [f"{p_k}={p_v}" for p_k, p_v in props.items()]
                 )
-                choices.append(f"{prefix}{k}: {name} ({prop_str})")
+                choices.append(f"{k}: {name} ({prop_str})")
             else:
-                choices.append(f"{prefix}{k}: {name}")
+                choices.append(f"{k}: {name}")
             self.tile_keys.append(k)
         self.listbox = wx.ListBox(self, choices=choices)
         if choices:
@@ -354,22 +343,11 @@ class CustomTileDialog(wx.Frame):
                 name = data
                 props = {}
 
-            source_info = self.tile_sources.get(tid, {})
-            source = source_info.get("source")
-            if source == "map":
-                prefix = "[地图] "
-            elif source == "root_conflict":
-                prefix = f"[根目录冲突] {source_info.get('original_id')} -> "
-            elif source == "root":
-                prefix = "[根目录] "
-            else:
-                prefix = ""
-
             if props:
                 prop_str = ", ".join([f"{k}={v}" for k, v in props.items()])
-                display = f"{prefix}{tid}: {name} ({prop_str})"
+                display = f"{tid}: {name} ({prop_str})"
             else:
-                display = f"{prefix}{tid}: {name}"
+                display = f"{tid}: {name}"
 
             self.tile_list.Append(display)
 
@@ -681,6 +659,16 @@ class MapEditorFrame(wx.Frame):
             right, ensure_ascii=False, sort_keys=True
         )
 
+    def _tile_definition_signature(self, tile_info):
+        return json.dumps(tile_info, ensure_ascii=False, sort_keys=True)
+
+    def _contains_tile_definition(self, definitions, tile_info):
+        signature = self._tile_definition_signature(tile_info)
+        return any(
+            self._tile_definition_signature(existing) == signature
+            for existing in definitions.values()
+        )
+
     def _next_available_tile_id(self, definitions):
         numeric_ids = []
         for key in definitions.keys():
@@ -698,6 +686,9 @@ class MapEditorFrame(wx.Frame):
         sources = {k: {"source": "map"} for k in effective}
 
         for tile_id, tile_info in self.root_tile_definitions.items():
+            if self._contains_tile_definition(effective, tile_info):
+                continue
+
             if tile_id not in effective:
                 effective[tile_id] = copy.deepcopy(tile_info)
                 sources[tile_id] = {"source": "root"}
@@ -713,6 +704,49 @@ class MapEditorFrame(wx.Frame):
         self.tile_definitions = effective
         self.tile_definition_sources = sources
         self.data_manager.tile_definitions = self.tile_definitions
+
+    def _add_deduped_tile_definition(self, result, seen, tile_id, tile_info):
+        signature = self._tile_definition_signature(tile_info)
+        if signature in seen:
+            return
+
+        target_id = tile_id
+        if target_id in result and not self._tile_definition_equal(
+            result[target_id], tile_info
+        ):
+            target_id = self._next_available_tile_id(result)
+
+        result[target_id] = copy.deepcopy(tile_info)
+        seen.add(signature)
+
+    def _dedupe_tile_definitions(self, definitions):
+        result = {}
+        seen = set()
+
+        for tile_id, tile_info in sorted(
+            definitions.items(), key=lambda x: tile_sort_key(x[0])
+        ):
+            self._add_deduped_tile_definition(result, seen, tile_id, tile_info)
+
+        return result
+
+    def _get_root_tile_definitions_for_save(self):
+        result = {}
+        seen = set()
+
+        groups = (
+            self.map_tile_definitions,
+            self.root_tile_definitions,
+            self.tile_definitions,
+        )
+        for definitions in groups:
+            normalized = self._normalize_tile_definitions(definitions)
+            for tile_id, tile_info in sorted(
+                normalized.items(), key=lambda x: tile_sort_key(x[0])
+            ):
+                self._add_deduped_tile_definition(result, seen, tile_id, tile_info)
+
+        return result
 
     def _get_used_tile_ids(self):
         used = set()
@@ -730,7 +764,7 @@ class MapEditorFrame(wx.Frame):
         }
 
     def _save_root_tile_definitions(self):
-        root_defs = self._normalize_tile_definitions(self.tile_definitions)
+        root_defs = self._get_root_tile_definitions_for_save()
         with open("./tile_definitions.json", "w", encoding="utf-8") as f:
             json.dump(root_defs, f, ensure_ascii=False, indent=4)
         self.root_tile_definitions = root_defs
@@ -1061,13 +1095,20 @@ class MapEditorFrame(wx.Frame):
     def enable_and_update(self, tile_data):
         global TILE_DEFINITIONS
         normalized = self._normalize_tile_definitions(tile_data)
-        self.root_tile_definitions = copy.deepcopy(normalized)
+        previous_sources = copy.deepcopy(self.tile_definition_sources)
+        previous_map_defs = copy.deepcopy(self.map_tile_definitions)
         used_ids = self._get_used_tile_ids()
         self.map_tile_definitions = {
             tile_id: copy.deepcopy(tile_info)
             for tile_id, tile_info in normalized.items()
-            if tile_id in used_ids or self.tile_definition_sources.get(tile_id, {}).get("source") == "map"
+            if tile_id in used_ids
+            or previous_sources.get(tile_id, {}).get("source") == "map"
         }
+        for tile_id in list(previous_map_defs.keys()):
+            if tile_id not in normalized:
+                self.map_tile_definitions.pop(tile_id, None)
+
+        self.root_tile_definitions = self._dedupe_tile_definitions(normalized)
         self._sync_tile_definitions()
         TILE_DEFINITIONS = self.tile_definitions.copy()
         self.Enable(True)
