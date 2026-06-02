@@ -21,12 +21,27 @@ WX_NO = 8
 WX_CANCEL = 16
 
 
+def tile_sort_key(tile_id):
+    try:
+        return (0, int(tile_id))
+    except (TypeError, ValueError):
+        return (1, str(tile_id))
+
+
 class TileSelectionDialog(wx.Dialog):
-    def __init__(self, parent, tile_defs):
+    def __init__(self, parent, tile_defs, tile_sources=None):
         super().__init__(parent, title="选择瓦片")
         sizer = wx.BoxSizer(wx.VERTICAL)
         choices = []
-        for k, v in sorted(tile_defs.items(), key=lambda x: int(x[0])):
+        tile_sources = tile_sources or {}
+        source_priority = {"map": 0, "root": 1, "root_conflict": 2}
+
+        def entry_sort_key(item):
+            source = tile_sources.get(item[0], {}).get("source", "root")
+            return (source_priority.get(source, 9),) + tile_sort_key(item[0])
+
+        self.tile_keys = []
+        for k, v in sorted(tile_defs.items(), key=entry_sort_key):
             if isinstance(v, dict):
                 name = v.get("name", "")
                 props = v.get("properties", {})
@@ -34,22 +49,34 @@ class TileSelectionDialog(wx.Dialog):
                 name = v
                 props = {}
 
+            source_info = tile_sources.get(k, {})
+            source = source_info.get("source")
+            if source == "map":
+                prefix = "[地图] "
+            elif source == "root_conflict":
+                prefix = f"[根目录冲突] {source_info.get('original_id')} -> "
+            elif source == "root":
+                prefix = "[根目录] "
+            else:
+                prefix = ""
+
             if props:
                 prop_str = ", ".join(
                     [f"{p_k}={p_v}" for p_k, p_v in props.items()]
                 )
-                choices.append(f"{k}: {name} ({prop_str})")
+                choices.append(f"{prefix}{k}: {name} ({prop_str})")
             else:
-                choices.append(f"{k}: {name}")
+                choices.append(f"{prefix}{k}: {name}")
+            self.tile_keys.append(k)
         self.listbox = wx.ListBox(self, choices=choices)
-        self.listbox.SetSelection(0)
+        if choices:
+            self.listbox.SetSelection(0)
         sizer.Add(self.listbox, 1, wx.ALL | wx.EXPAND, 10)
 
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
         self.SetSizer(sizer)
         self.listbox.SetFocus()
-        self.tile_keys = list(sorted(tile_defs.keys(), key=lambda x: int(x)))
 
     def GetSelectedTileId(self):
         sel = self.listbox.GetSelection()
@@ -262,9 +289,10 @@ class MapPropertiesDialog(wx.Dialog):
 
 
 class CustomTileDialog(wx.Frame):
-    def __init__(self, parent, tile_defs):
+    def __init__(self, parent, tile_defs, tile_sources=None):
         super().__init__(parent, title="编辑瓦片", size=(800, 600))
         self.tile_data = copy.deepcopy(tile_defs)
+        self.tile_sources = copy.deepcopy(tile_sources or {})
         self.parent = parent
         self.selected_tile_id = None
 
@@ -311,7 +339,13 @@ class CustomTileDialog(wx.Frame):
 
     def refresh_list(self):
         self.tile_list.Clear()
-        sorted_items = sorted(self.tile_data.items(), key=lambda x: int(x[0]))
+        source_priority = {"map": 0, "root": 1, "root_conflict": 2}
+
+        def entry_sort_key(item):
+            source = self.tile_sources.get(item[0], {}).get("source", "root")
+            return (source_priority.get(source, 9),) + tile_sort_key(item[0])
+
+        sorted_items = sorted(self.tile_data.items(), key=entry_sort_key)
         for tid, data in sorted_items:
             if isinstance(data, dict):
                 name = data.get("name", "")
@@ -320,11 +354,22 @@ class CustomTileDialog(wx.Frame):
                 name = data
                 props = {}
 
+            source_info = self.tile_sources.get(tid, {})
+            source = source_info.get("source")
+            if source == "map":
+                prefix = "[地图] "
+            elif source == "root_conflict":
+                prefix = f"[根目录冲突] {source_info.get('original_id')} -> "
+            elif source == "root":
+                prefix = "[根目录] "
+            else:
+                prefix = ""
+
             if props:
                 prop_str = ", ".join([f"{k}={v}" for k, v in props.items()])
-                display = f"{tid}: {name} ({prop_str})"
+                display = f"{prefix}{tid}: {name} ({prop_str})"
             else:
-                display = f"{tid}: {name}"
+                display = f"{prefix}{tid}: {name}"
 
             self.tile_list.Append(display)
 
@@ -332,7 +377,8 @@ class CustomTileDialog(wx.Frame):
         sel = self.tile_list.GetSelection()
         if sel != wx.NOT_FOUND:
             text = self.tile_list.GetString(sel)
-            self.selected_tile_id = text.split(":")[0].strip()
+            before_colon = text.split(":")[0].strip()
+            self.selected_tile_id = before_colon.split()[-1]
         event.Skip()
 
     def on_edit(self, event):
@@ -360,13 +406,20 @@ class CustomTileDialog(wx.Frame):
                     old_data = {"name": old_data, "properties": {}}
                 properties = old_data.get("properties", {})
                 self.tile_data[new_id] = {"name": new_name, "properties": properties}
+                self.tile_sources.pop(self.selected_tile_id, None)
+                self.tile_sources[new_id] = {"source": "map"}
+                self.selected_tile_id = new_id
                 self.refresh_list()
         dlg.Destroy()
 
     def on_add(self, event):
-        max_id = (
-            max([int(k) for k in self.tile_data.keys()]) if self.tile_data else -1
-        )
+        numeric_ids = []
+        for key in self.tile_data.keys():
+            try:
+                numeric_ids.append(int(key))
+            except (TypeError, ValueError):
+                pass
+        max_id = max(numeric_ids, default=-1)
         next_id = str(max_id + 1)
 
         dlg = TileInputDialog(self, next_id, "", is_edit=False)
@@ -375,6 +428,7 @@ class CustomTileDialog(wx.Frame):
             new_name = dlg.name_input.GetValue().strip()
             if new_id and new_name:
                 self.tile_data[new_id] = {"name": new_name, "properties": {}}
+                self.tile_sources[new_id] = {"source": "map"}
                 self.refresh_list()
         dlg.Destroy()
 
@@ -384,6 +438,7 @@ class CustomTileDialog(wx.Frame):
             return
 
         del self.tile_data[self.selected_tile_id]
+        self.tile_sources.pop(self.selected_tile_id, None)
         self.selected_tile_id = None
         self.refresh_list()
 
@@ -460,8 +515,12 @@ class MapEditorFrame(wx.Frame):
         self._clean_map_state = None
 
         global TILE_DEFINITIONS
-        TILE_DEFINITIONS = self.load_tiled_data()
-        self.tile_definitions = TILE_DEFINITIONS.copy()
+        self.root_tile_definitions = self.load_tiled_data()
+        self.map_tile_definitions = {}
+        self.tile_definitions = {}
+        self.tile_definition_sources = {}
+        self._sync_tile_definitions()
+        TILE_DEFINITIONS = self.tile_definitions.copy()
         self.data_manager.tile_definitions = self.tile_definitions
 
         self.selection_start = None
@@ -521,7 +580,7 @@ class MapEditorFrame(wx.Frame):
                     self._refresh_cell(cx, cy)
 
     def _get_map_state(self):
-        data = self.data_manager.to_dict(self.tile_definitions)
+        data = self.data_manager.to_dict(self._get_used_tile_definitions())
         return json.dumps(data, ensure_ascii=False, sort_keys=True)
 
     def _mark_map_clean(self):
@@ -591,14 +650,7 @@ class MapEditorFrame(wx.Frame):
                     print("配置文件格式错误，重置为默认配置")
                     return default_config
 
-                result = {}
-                for k, v in data.items():
-                    if isinstance(v, str):
-                        result[str(k)] = {"name": v, "properties": {}}
-                    else:
-                        result[str(k)] = v
-
-                return result
+                return self._normalize_tile_definitions(data)
 
         except json.JSONDecodeError as e:
             print(f"JSON解析错误: {e}")
@@ -606,6 +658,91 @@ class MapEditorFrame(wx.Frame):
         except Exception as e:
             print(f"加载配置文件时发生错误: {e}")
             return default_config
+
+    def _normalize_tile_definitions(self, data):
+        if not isinstance(data, dict):
+            return {}
+
+        result = {}
+        for k, v in data.items():
+            key = str(k)
+            if isinstance(v, str):
+                result[key] = {"name": v, "properties": {}}
+            elif isinstance(v, dict):
+                item = copy.deepcopy(v)
+                item["name"] = str(item.get("name", ""))
+                props = item.get("properties", {})
+                item["properties"] = props if isinstance(props, dict) else {}
+                result[key] = item
+        return result
+
+    def _tile_definition_equal(self, left, right):
+        return json.dumps(left, ensure_ascii=False, sort_keys=True) == json.dumps(
+            right, ensure_ascii=False, sort_keys=True
+        )
+
+    def _next_available_tile_id(self, definitions):
+        numeric_ids = []
+        for key in definitions.keys():
+            try:
+                numeric_ids.append(int(key))
+            except (TypeError, ValueError):
+                pass
+        next_id = max(numeric_ids, default=-1) + 1
+        while str(next_id) in definitions:
+            next_id += 1
+        return str(next_id)
+
+    def _sync_tile_definitions(self):
+        effective = copy.deepcopy(self.map_tile_definitions)
+        sources = {k: {"source": "map"} for k in effective}
+
+        for tile_id, tile_info in self.root_tile_definitions.items():
+            if tile_id not in effective:
+                effective[tile_id] = copy.deepcopy(tile_info)
+                sources[tile_id] = {"source": "root"}
+                continue
+
+            if self._tile_definition_equal(effective[tile_id], tile_info):
+                continue
+
+            new_id = self._next_available_tile_id(effective)
+            effective[new_id] = copy.deepcopy(tile_info)
+            sources[new_id] = {"source": "root_conflict", "original_id": tile_id}
+
+        self.tile_definitions = effective
+        self.tile_definition_sources = sources
+        self.data_manager.tile_definitions = self.tile_definitions
+
+    def _get_used_tile_ids(self):
+        used = set()
+        for row in self.data_manager.map_data:
+            for tile_id in row:
+                used.add(str(tile_id))
+        return used
+
+    def _get_used_tile_definitions(self):
+        used = self._get_used_tile_ids()
+        return {
+            tile_id: copy.deepcopy(tile_info)
+            for tile_id, tile_info in self.tile_definitions.items()
+            if tile_id in used
+        }
+
+    def _save_root_tile_definitions(self):
+        root_defs = self._normalize_tile_definitions(self.tile_definitions)
+        with open("./tile_definitions.json", "w", encoding="utf-8") as f:
+            json.dump(root_defs, f, ensure_ascii=False, indent=4)
+        self.root_tile_definitions = root_defs
+        self._sync_tile_definitions()
+
+    def _promote_tile_definition_to_map(self, tile_id):
+        tile_id = str(tile_id)
+        tile_info = self.tile_definitions.get(tile_id)
+        if tile_info is None:
+            return
+        self.map_tile_definitions[tile_id] = copy.deepcopy(tile_info)
+        self._sync_tile_definitions()
 
     def init_ui(self):
         panel = wx.Panel(self)
@@ -853,6 +990,9 @@ class MapEditorFrame(wx.Frame):
 
     def reset_to_default_map(self):
         self.data_manager.clear()
+        self.map_tile_definitions = {}
+        self.root_tile_definitions = self.load_tiled_data()
+        self._sync_tile_definitions()
         self.cursor_x = 0
         self.cursor_y = 0
         self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
@@ -906,7 +1046,9 @@ class MapEditorFrame(wx.Frame):
     def on_custom_tiles(self, event):
         self.Enable(False)
         self.Unbind(wx.EVT_CHAR_HOOK)
-        self.tile_window = CustomTileDialog(self, self.tile_definitions)
+        self.tile_window = CustomTileDialog(
+            self, self.tile_definitions, self.tile_definition_sources
+        )
         self.tile_window.Show()
 
     def on_edit_map_properties(self, event):
@@ -918,9 +1060,16 @@ class MapEditorFrame(wx.Frame):
 
     def enable_and_update(self, tile_data):
         global TILE_DEFINITIONS
-        TILE_DEFINITIONS = tile_data
-        self.tile_definitions = tile_data.copy()
-        self.data_manager.tile_definitions = self.tile_definitions
+        normalized = self._normalize_tile_definitions(tile_data)
+        self.root_tile_definitions = copy.deepcopy(normalized)
+        used_ids = self._get_used_tile_ids()
+        self.map_tile_definitions = {
+            tile_id: copy.deepcopy(tile_info)
+            for tile_id, tile_info in normalized.items()
+            if tile_id in used_ids or self.tile_definition_sources.get(tile_id, {}).get("source") == "map"
+        }
+        self._sync_tile_definitions()
+        TILE_DEFINITIONS = self.tile_definitions.copy()
         self.Enable(True)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
         self.Raise()
@@ -1098,9 +1247,12 @@ class MapEditorFrame(wx.Frame):
         event.Skip()
 
     def on_set_tile(self, event):
-        dlg = TileSelectionDialog(self, self.tile_definitions)
+        dlg = TileSelectionDialog(
+            self, self.tile_definitions, self.tile_definition_sources
+        )
         if dlg.ShowModal() == wx.ID_OK:
             tile_id = dlg.GetSelectedTileId()
+            self._promote_tile_definition_to_map(tile_id)
             self.data_manager.set_tile(self.cursor_x, self.cursor_y, tile_id)
         dlg.Destroy()
 
@@ -1164,7 +1316,9 @@ class MapEditorFrame(wx.Frame):
         TTS.speak("清除")
 
     def on_fill_selection(self, event):
-        dlg = TileSelectionDialog(self, self.tile_definitions)
+        dlg = TileSelectionDialog(
+            self, self.tile_definitions, self.tile_definition_sources
+        )
         if dlg.ShowModal() == wx.ID_OK:
             tile_id = dlg.GetSelectedTileId()
             self._fill_selection(tile_id)
@@ -1183,6 +1337,7 @@ class MapEditorFrame(wx.Frame):
         else:
             changes.append((self.cursor_x, self.cursor_y, tile_id))
         if changes:
+            self._promote_tile_definition_to_map(tile_id)
             dm.set_tiles_bulk(changes)
         self._clear_selection()
 
@@ -1374,6 +1529,14 @@ class MapEditorFrame(wx.Frame):
                 wx.MessageBox("地图数据无效！", "错误", wx.OK | wx.ICON_ERROR)
                 return False
 
+            global TILE_DEFINITIONS
+            self.root_tile_definitions = self.load_tiled_data()
+            self.map_tile_definitions = self._normalize_tile_definitions(
+                data.get("tile_definitions", {})
+            )
+            self._sync_tile_definitions()
+            TILE_DEFINITIONS = self.tile_definitions.copy()
+
             self.cursor_x = 0
             self.cursor_y = 0
             self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
@@ -1415,7 +1578,7 @@ class MapEditorFrame(wx.Frame):
 
     def save_to_tiled_json(self, filepath):
         try:
-            tiled_json = self.data_manager.to_dict(self.tile_definitions)
+            tiled_json = self.data_manager.to_dict(self._get_used_tile_definitions())
             json_str = json.dumps(tiled_json, indent=2, ensure_ascii=False)
 
             def format_impassable_section(s):
@@ -1453,6 +1616,7 @@ class MapEditorFrame(wx.Frame):
 
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(json_str)
+            self._save_root_tile_definitions()
             return True
         except Exception as e:
             wx.MessageBox(f"保存失败：{str(e)}", "错误", wx.OK | wx.ICON_ERROR)
