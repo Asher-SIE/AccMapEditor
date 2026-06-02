@@ -807,6 +807,7 @@ class MapEditorFrame(wx.Frame):
         open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
         close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件\t&L")
         save_item = file_menu.Append(wx.ID_SAVE, "保存...\tCtrl+S")
+        save_as_item = file_menu.Append(wx.ID_SAVEAS, "另存为...\tCtrl+Shift+S")
         resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\t&R")
         custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\t&C")
         map_prop_item = file_menu.Append(wx.ID_ANY, "编辑地图属性...\t&M")
@@ -872,6 +873,7 @@ class MapEditorFrame(wx.Frame):
 
         self.Bind(wx.EVT_MENU, self.on_open, open_item)
         self.Bind(wx.EVT_MENU, self.on_save, save_item)
+        self.Bind(wx.EVT_MENU, self.on_save_as, save_as_item)
         self.Bind(wx.EVT_MENU, self.on_resize, resize_item)
         self.Bind(wx.EVT_MENU, self.on_custom_tiles, custom_tile_item)
         self.Bind(wx.EVT_MENU, self.on_edit_map_properties, map_prop_item)
@@ -934,6 +936,9 @@ class MapEditorFrame(wx.Frame):
         if event.ControlDown() and event.ShiftDown():
             if key == ord("A"):
                 self.on_add_object(None)
+                return
+            elif key == ord("S"):
+                self.on_save_as(None)
                 return
             elif key == ord("C"):
                 self.copy_object(None)
@@ -1046,9 +1051,17 @@ class MapEditorFrame(wx.Frame):
             self.Destroy()
 
     def on_save_file(self):
+        default_dir = ""
+        default_file = ""
+        if self.current_file:
+            default_dir = os.path.dirname(self.current_file)
+            default_file = os.path.basename(self.current_file)
+
         with wx.FileDialog(
             self,
             "保存地图",
+            defaultDir=default_dir,
+            defaultFile=default_file,
             wildcard="Tiled JSON (*.json)|*.json",
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
         ) as dlg:
@@ -1616,6 +1629,9 @@ class MapEditorFrame(wx.Frame):
 
     def on_save(self, event):
         self.save_current_file()
+
+    def on_save_as(self, event):
+        self.on_save_file()
 
     def save_to_tiled_json(self, filepath):
         try:
