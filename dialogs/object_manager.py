@@ -63,6 +63,7 @@ class ObjectManagerDialog(wx.Frame):
             "objects_cleared",
             "map_loaded",
             "map_cleared",
+            "map_resized",
         ):
             self.refresh_list()
         event.Skip()

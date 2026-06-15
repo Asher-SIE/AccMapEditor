@@ -440,7 +440,7 @@ class MapEditorFrame(wx.Frame):
                 self._refresh_cells_for_object(old)
             if new:
                 self._refresh_cells_for_object(new)
-        elif kind in ("objects_cleared", "map_loaded", "map_cleared"):
+        elif kind in ("objects_cleared", "map_loaded", "map_cleared", "map_resized"):
             self.rebuild_grid()
 
         if not getattr(self, "_silent_status", False):
@@ -986,13 +986,6 @@ class MapEditorFrame(wx.Frame):
 
             dm.resize(new_w, new_h)
 
-            self.cursor_x = min(self.cursor_x, new_w - 1)
-            self.cursor_y = min(self.cursor_y, new_h - 1)
-            self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
-            self.grid.SelectBlock(
-                self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x
-            )
-
             TTS.speak(f"尺寸已调整为{new_w}乘{new_h}")
         dlg.Destroy()
 
@@ -1517,21 +1510,26 @@ class MapEditorFrame(wx.Frame):
 
     def rebuild_grid(self):
         dm = self.data_manager
-        self.grid.ClearGrid()
-        self.grid.DeleteRows(0, self.grid.GetNumberRows())
-        self.grid.DeleteCols(0, self.grid.GetNumberCols())
-        self.grid.AppendRows(dm.height)
-        self.grid.AppendCols(dm.width)
+        self.grid.BeginBatch()
+        try:
+            self.grid.ClearGrid()
+            self.grid.DeleteRows(0, self.grid.GetNumberRows())
+            self.grid.DeleteCols(0, self.grid.GetNumberCols())
+            self.grid.AppendRows(dm.height)
+            self.grid.AppendCols(dm.width)
 
-        for y in range(dm.height):
-            for x in range(dm.width):
-                self.grid.SetCellValue(y, x, dm.get_cell_display(x, y))
+            for y in range(dm.height):
+                for x in range(dm.width):
+                    self.grid.SetCellValue(y, x, dm.get_cell_display(x, y))
 
-        self._clear_selection()
-        self.cursor_x = min(self.cursor_x, dm.width - 1)
-        self.cursor_y = min(self.cursor_y, dm.height - 1)
-        self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
-        self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
+            self._clear_selection()
+            self.cursor_x = min(self.cursor_x, dm.width - 1)
+            self.cursor_y = min(self.cursor_y, dm.height - 1)
+            self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
+            self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
+        finally:
+            self.grid.EndBatch()
+        self.grid.ForceRefresh()
 
     def on_save(self, event):
         self.save_current_file()

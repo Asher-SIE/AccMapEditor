@@ -196,12 +196,14 @@ class ResizeMapCommand(Command):
         self.old_height = None
         self.old_data = None
         self.old_collision = None
+        self.old_object_layers = None
 
     def execute(self, manager):
         self.old_width = manager.width
         self.old_height = manager.height
         self.old_data = copy.deepcopy(manager.map_data)
         self.old_collision = copy.deepcopy(manager.collision_set)
+        self.old_object_layers = copy.deepcopy(manager.object_layers)
 
         new_data = [[0] * self.new_width for _ in range(self.new_height)]
         for y in range(min(self.old_height, self.new_height)):
@@ -216,14 +218,24 @@ class ResizeMapCommand(Command):
             for x, y in manager.collision_set
             if x < self.new_width and y < self.new_height
         }
-        manager._notify("map_loaded")
+
+        new_pixel_w = self.new_width * TILE_SIZE
+        new_pixel_h = self.new_height * TILE_SIZE
+        for layer in manager.object_layers:
+            layer["objects"] = [
+                obj
+                for obj in layer.get("objects", [])
+                if obj.get("x", 0) < new_pixel_w and obj.get("y", 0) < new_pixel_h
+            ]
+        manager._notify("map_resized")
 
     def undo(self, manager):
         manager.map_data = self.old_data
         manager.width = self.old_width
         manager.height = self.old_height
         manager.collision_set = self.old_collision
-        manager._notify("map_loaded")
+        manager.object_layers = self.old_object_layers
+        manager._notify("map_resized")
 
 
 class UndoManager:

@@ -14,6 +14,7 @@ class MapDataEvent(wx.PyEvent):
     KIND_OBJECTS_CLEARED = "objects_cleared"
     KIND_MAP_LOADED = "map_loaded"
     KIND_MAP_CLEARED = "map_cleared"
+    KIND_MAP_RESIZED = "map_resized"
 
     def __init__(self, kind, **data):
         super().__init__()
