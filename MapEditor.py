@@ -6,6 +6,8 @@ import TTS
 import wx
 import wx.grid as gridlib
 
+import expiry_guard
+
 from map_data import MapDataManager, EVT_MAP_DATA, MapDataEvent, TILE_SIZE
 from map_data.commands import TILE_SIZE as CMD_TILE_SIZE
 from dialogs.object_dialog import ObjectDialog, PropertyListPanel, format_property_value
@@ -1597,5 +1599,6 @@ class MapEditorApp(wx.App):
 
 
 if __name__ == "__main__":
+    expiry_guard.check()
     app = MapEditorApp()
     app.MainLoop()
