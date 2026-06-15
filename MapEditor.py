@@ -8,7 +8,7 @@ import wx.grid as gridlib
 
 from map_data import MapDataManager, EVT_MAP_DATA, MapDataEvent, TILE_SIZE
 from map_data.commands import TILE_SIZE as CMD_TILE_SIZE
-from dialogs.object_dialog import ObjectDialog
+from dialogs.object_dialog import ObjectDialog, PropertyListPanel, format_property_value
 from dialogs.object_manager import ObjectManagerDialog
 
 
@@ -51,7 +51,7 @@ class TileSelectionDialog(wx.Dialog):
 
             if props:
                 prop_str = ", ".join(
-                    [f"{p_k}={p_v}" for p_k, p_v in props.items()]
+                    [f"{p_k}={format_property_value(p_v)}" for p_k, p_v in props.items()]
                 )
                 choices.append(f"{k}: {name} ({prop_str})")
             else:
@@ -138,67 +138,24 @@ class TileInputDialog(wx.Dialog):
 class PropertyDialog(wx.Dialog):
     def __init__(self, parent, properties=None):
         super().__init__(parent, title="编辑属性")
+
         self.properties = properties if properties else {}
 
         sizer = wx.BoxSizer(wx.VERTICAL)
 
-        sizer.Add(wx.StaticText(self, label="属性列表："), 0, wx.ALL, 5)
+        self.prop_panel = PropertyListPanel(
+            self, properties=self.properties, label="属性列表："
+        )
+        sizer.Add(self.prop_panel, 1, wx.EXPAND | wx.ALL, 10)
 
-        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE)
-        self.refresh_prop_list()
-        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
-
-        input_sizer = wx.FlexGridSizer(rows=1, cols=2, hgap=5, vgap=5)
-        self.name_input = wx.TextCtrl(self, value="属性名")
-        self.value_input = wx.TextCtrl(self, value="属性值")
-        input_sizer.Add(self.name_input, 1, wx.EXPAND)
-        input_sizer.Add(self.value_input, 1, wx.EXPAND)
-        sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 5)
-
-        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        btn_add = wx.Button(self, label="添加属性")
-        btn_del = wx.Button(self, label="删除")
-        btn_ok = wx.Button(self, id=wx.ID_OK)
-
-        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
-        btn_sizer.Add(btn_del, 1, wx.RIGHT, 5)
-        btn_sizer.Add(btn_ok, 1)
-        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
         self.SetSizer(sizer)
-        self.SetSize((400, 300))
-
-        self.Bind(wx.EVT_BUTTON, self.on_add, btn_add)
-        self.Bind(wx.EVT_BUTTON, self.on_delete, btn_del)
-
-    def refresh_prop_list(self):
-        self.prop_list.Clear()
-        for name, value in self.properties.items():
-            self.prop_list.Append(f"{name}={value}")
-
-    def on_add(self, event):
-        name = self.name_input.GetValue().strip()
-        value = self.value_input.GetValue().strip()
-        if not name:
-            wx.MessageBox("请输入属性名！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        self.properties[name] = value
-        self.name_input.SetValue("")
-        self.value_input.SetValue("")
-        self.refresh_prop_list()
-
-    def on_delete(self, event):
-        sel = self.prop_list.GetSelection()
-        if sel == wx.NOT_FOUND:
-            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        text = self.prop_list.GetString(sel)
-        name = text.split("=")[0]
-        del self.properties[name]
-        self.refresh_prop_list()
+        self.SetSize((400, 320))
 
     def get_properties(self):
-        return self.properties
+        return self.prop_panel.get_properties()
 
 
 class MapPropertiesDialog(wx.Dialog):
@@ -209,72 +166,19 @@ class MapPropertiesDialog(wx.Dialog):
 
         sizer = wx.BoxSizer(wx.VERTICAL)
 
-        sizer.Add(wx.StaticText(self, label="属性列表："), 0, wx.ALL, 5)
+        self.prop_panel = PropertyListPanel(
+            self, properties=self.map_properties, label="属性列表："
+        )
+        sizer.Add(self.prop_panel, 1, wx.EXPAND | wx.ALL, 10)
 
-        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 120))
-        self.refresh_prop_list()
-        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
-
-        input_sizer = wx.FlexGridSizer(rows=2, cols=2, hgap=5, vgap=5)
-        input_sizer.Add(wx.StaticText(self, label="名称:"))
-        self.name_input = wx.TextCtrl(self)
-        input_sizer.Add(self.name_input, 1, wx.EXPAND)
-        input_sizer.Add(wx.StaticText(self, label="值:"))
-        self.value_input = wx.TextCtrl(self)
-        input_sizer.Add(self.value_input, 1, wx.EXPAND)
-        sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 5)
-
-        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        btn_add = wx.Button(self, label="添加/更新")
-        btn_del = wx.Button(self, label="删除选中")
-        btn_sizer.Add(btn_add, 1, wx.RIGHT, 5)
-        btn_sizer.Add(btn_del, 1)
-        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
-
-        btn_sizer2 = self.CreateButtonSizer(wx.OK | wx.CANCEL)
-        sizer.Add(btn_sizer2, 0, wx.EXPAND | wx.ALL, 5)
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
         self.SetSizer(sizer)
         self.SetSize((400, 350))
 
-        self.Bind(wx.EVT_BUTTON, self.on_add, btn_add)
-        self.Bind(wx.EVT_BUTTON, self.on_delete, btn_del)
-        self.Bind(wx.EVT_LISTBOX, self.on_select, self.prop_list)
-
-    def refresh_prop_list(self):
-        self.prop_list.Clear()
-        for name, value in self.map_properties.items():
-            self.prop_list.Append(f"{name} = {value}")
-
-    def on_select(self, event):
-        text = self.prop_list.GetString(self.prop_list.GetSelection())
-        if " = " in text:
-            name, value = text.split(" = ", 1)
-            self.name_input.SetValue(name)
-            self.value_input.SetValue(value)
-
-    def on_add(self, event):
-        name = self.name_input.GetValue().strip()
-        value = self.value_input.GetValue().strip()
-        if not name:
-            wx.MessageBox("请输入属性名称！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        self.map_properties[name] = value
-        self.refresh_prop_list()
-
-    def on_delete(self, event):
-        sel = self.prop_list.GetSelection()
-        if sel == wx.NOT_FOUND:
-            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        text = self.prop_list.GetString(sel)
-        if " = " in text:
-            name = text.split(" = ")[0]
-            del self.map_properties[name]
-            self.refresh_prop_list()
-
     def get_properties(self):
-        return self.map_properties
+        return self.prop_panel.get_properties()
 
 
 class CustomTileDialog(wx.Frame):
@@ -344,7 +248,9 @@ class CustomTileDialog(wx.Frame):
                 props = {}
 
             if props:
-                prop_str = ", ".join([f"{k}={v}" for k, v in props.items()])
+                prop_str = ", ".join(
+                    [f"{k}={format_property_value(v)}" for k, v in props.items()]
+                )
                 display = f"{tid}: {name} ({prop_str})"
             else:
                 display = f"{tid}: {name}"

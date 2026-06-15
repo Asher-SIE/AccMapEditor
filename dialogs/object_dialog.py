@@ -299,6 +299,111 @@ class StructuredValueDialog(wx.Dialog):
         return self.result_value
 
 
+class PropertyListPanel(wx.Panel):
+    """可复用的属性编辑面板：ListBox + 添加/编辑/删除三按钮。
+
+    支持任意 JSON 类型（string/number/boolean/array/object），通过
+    StructuredValueDialog 进行编辑，供对象/瓦片/地图属性等复用。
+    """
+
+    def __init__(self, parent, properties=None, label="自定义属性："):
+        super().__init__(parent)
+        self.properties = (
+            copy.deepcopy(properties) if properties is not None else {}
+        )
+        self.property_keys = []
+
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        if label:
+            sizer.Add(
+                wx.StaticText(self, label=label), 0, wx.LEFT | wx.TOP, 0
+            )
+
+        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE)
+        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.TOP, 5)
+
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_add_prop = wx.Button(self, label="添加属性")
+        self.btn_edit_prop = wx.Button(self, label="编辑")
+        self.btn_del_prop = wx.Button(self, label="删除")
+        btn_sizer.Add(self.btn_add_prop, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_edit_prop, 1, wx.RIGHT, 5)
+        btn_sizer.Add(self.btn_del_prop, 1)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.TOP, 5)
+
+        self.SetSizer(sizer)
+
+        self.btn_add_prop.Bind(wx.EVT_BUTTON, self.on_add_prop)
+        self.btn_edit_prop.Bind(wx.EVT_BUTTON, self.on_edit_prop)
+        self.btn_del_prop.Bind(wx.EVT_BUTTON, self.on_del_prop)
+        self.prop_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_edit_prop)
+
+        self.refresh_prop_list()
+
+    def refresh_prop_list(self):
+        self.prop_list.Clear()
+        self.property_keys = list(self.properties.keys())
+        for name in self.property_keys:
+            value = self.properties[name]
+            self.prop_list.Append(
+                f"{name} = {format_property_value(value)}"
+            )
+
+    def set_properties(self, properties):
+        self.properties = (
+            copy.deepcopy(properties) if properties is not None else {}
+        )
+        self.refresh_prop_list()
+
+    def get_properties(self):
+        return copy.deepcopy(self.properties)
+
+    def on_add_prop(self, event):
+        dlg = StructuredValueDialog(self, "添加属性", value="", require_name=True)
+        if dlg.ShowModal() == wx.ID_OK:
+            name = dlg.get_name()
+            if name in self.properties:
+                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                self.properties[name] = dlg.get_value()
+                self.refresh_prop_list()
+        dlg.Destroy()
+
+    def on_edit_prop(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要编辑的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        old_name = self.property_keys[sel]
+        dlg = StructuredValueDialog(
+            self,
+            "编辑属性",
+            value=self.properties[old_name],
+            name=old_name,
+            require_name=True,
+        )
+        if dlg.ShowModal() == wx.ID_OK:
+            new_name = dlg.get_name()
+            if new_name != old_name and new_name in self.properties:
+                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
+            else:
+                if new_name != old_name:
+                    del self.properties[old_name]
+                self.properties[new_name] = dlg.get_value()
+                self.refresh_prop_list()
+        dlg.Destroy()
+
+    def on_del_prop(self, event):
+        sel = self.prop_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        name = self.property_keys[sel]
+        del self.properties[name]
+        self.refresh_prop_list()
+
+
 class ObjectDialog(wx.Dialog):
     TILE_SIZE = 32
 
@@ -370,32 +475,18 @@ class ObjectDialog(wx.Dialog):
 
         sizer.Add(info_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
-        sizer.Add(wx.StaticText(self, label="自定义属性："), 0, wx.LEFT | wx.TOP, 10)
-
-        self.prop_list = wx.ListBox(self, style=wx.LB_SINGLE, size=(-1, 80))
-        self.properties = copy.deepcopy(self.obj_data.get("properties", {}))
-        self.property_keys = []
-        self.refresh_prop_list()
-        sizer.Add(self.prop_list, 1, wx.EXPAND | wx.ALL, 5)
-
-        prop_btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.btn_add_prop = wx.Button(self, label="添加属性")
-        self.btn_edit_prop = wx.Button(self, label="编辑")
-        self.btn_del_prop = wx.Button(self, label="删除")
-        prop_btn_sizer.Add(self.btn_add_prop, 1, wx.RIGHT, 5)
-        prop_btn_sizer.Add(self.btn_edit_prop, 1, wx.RIGHT, 5)
-        prop_btn_sizer.Add(self.btn_del_prop, 1)
-        sizer.Add(prop_btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
+        self.prop_panel = PropertyListPanel(
+            self,
+            properties=self.obj_data.get("properties", {}),
+            label="自定义属性：",
+        )
+        sizer.Add(self.prop_panel, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
         self.SetSizer(sizer)
         self.SetSize((400, 450))
-
-        self.Bind(wx.EVT_BUTTON, self.on_add_prop, self.btn_add_prop)
-        self.Bind(wx.EVT_BUTTON, self.on_edit_prop, self.btn_edit_prop)
-        self.Bind(wx.EVT_BUTTON, self.on_del_prop, self.btn_del_prop)
 
     def Validate(self):
         for ctrl in (
@@ -409,59 +500,6 @@ class ObjectDialog(wx.Dialog):
             except (ValueError, TypeError):
                 pass
         return True
-
-    def refresh_prop_list(self):
-        self.prop_list.Clear()
-        self.property_keys = list(self.properties.keys())
-        for name in self.property_keys:
-            value = self.properties[name]
-            self.prop_list.Append(f"{name} = {format_property_value(value)}")
-
-    def on_add_prop(self, event):
-        dlg = StructuredValueDialog(
-            self, "添加属性", value="", require_name=True
-        )
-        if dlg.ShowModal() == wx.ID_OK:
-            name = dlg.get_name()
-            if name in self.properties:
-                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
-            else:
-                self.properties[name] = dlg.get_value()
-                self.refresh_prop_list()
-        dlg.Destroy()
-
-    def on_edit_prop(self, event):
-        sel = self.prop_list.GetSelection()
-        if sel == wx.NOT_FOUND:
-            wx.MessageBox("请先选择要编辑的属性！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        old_name = self.property_keys[sel]
-        dlg = StructuredValueDialog(
-            self,
-            "编辑属性",
-            value=self.properties[old_name],
-            name=old_name,
-            require_name=True,
-        )
-        if dlg.ShowModal() == wx.ID_OK:
-            new_name = dlg.get_name()
-            if new_name != old_name and new_name in self.properties:
-                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
-            else:
-                if new_name != old_name:
-                    del self.properties[old_name]
-                self.properties[new_name] = dlg.get_value()
-                self.refresh_prop_list()
-        dlg.Destroy()
-
-    def on_del_prop(self, event):
-        sel = self.prop_list.GetSelection()
-        if sel == wx.NOT_FOUND:
-            wx.MessageBox("请先选择要删除的属性！", "提示", wx.OK | wx.ICON_WARNING)
-            return
-        name = self.property_keys[sel]
-        del self.properties[name]
-        self.refresh_prop_list()
 
     def get_object_data(self):
         tile_x = self.tile_x_input.GetValue()
@@ -477,6 +515,6 @@ class ObjectDialog(wx.Dialog):
             "y": tile_y * self.TILE_SIZE,
             "width": tile_w * self.TILE_SIZE,
             "height": tile_h * self.TILE_SIZE,
-            "properties": self.properties,
+            "properties": self.prop_panel.get_properties(),
         }
         return obj
