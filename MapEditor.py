@@ -1119,6 +1119,15 @@ class MapEditorFrame(wx.Frame):
         self.grid.SetGridCursor(y, x)
         self.update_status()
 
+    def _selection_summary(self):
+        bounds = self.get_selection_bounds()
+        if not bounds:
+            return "没有选区"
+        left, top, right, bottom = bounds
+        width = right - left + 1
+        height = bottom - top + 1
+        return f"已选:宽{width}，高{height}， ({left}, {top}) 到 ({right}, {bottom})；"
+
     def _add_landmark(self, index):
         self.landmarks[index] = (self.cursor_x, self.cursor_y)
         tile_name = self._get_tile_name(self.cursor_x, self.cursor_y)
@@ -1134,7 +1143,7 @@ class MapEditorFrame(wx.Frame):
         coord = self.landmarks.get(index)
         if coord is None:
             TTS.cancel()
-            TTS.speak("未设置路标")
+            wx.CallAfter(lambda: TTS.speak("未设置路标"))
             return
         x, y = coord
         dm = self.data_manager
@@ -1205,6 +1214,19 @@ class MapEditorFrame(wx.Frame):
             elif key == wx.WXK_DOWN and self.cursor_y < dm.height - 1:
                 self.cursor_y += 1
                 moved = True
+            if moved and modifiers == wx.MOD_SHIFT:
+                if not self.selection_start or not self.selection_end:
+                    self._clear_selection()
+                    self.selection_start = (old_x, old_y)
+                self.selection_end = (self.cursor_x, self.cursor_y)
+                left, top, right, bottom = self.get_selection_bounds()
+                self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
+                self.grid.SelectBlock(top, left, bottom, right)
+                self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
+                self.update_status()
+                TTS.cancel()
+                TTS.speak(self._selection_summary())
+                return
         if key == wx.WXK_ESCAPE:
             self.clear_selected(None)
             return
@@ -1246,7 +1268,7 @@ class MapEditorFrame(wx.Frame):
                 self.selection_end = (self.cursor_x, self.cursor_y)
                 self.update_status()
                 TTS.cancel()
-                TTS.speak(f"已选: {self.selection_start} 到 {self.selection_end}")
+                TTS.speak(self._selection_summary())
                 return
 
             else:
@@ -1270,7 +1292,7 @@ class MapEditorFrame(wx.Frame):
         self.selection_end = (self.cursor_x, self.cursor_y)
         self.update_status()
         TTS.cancel()
-        TTS.speak(f"已选: {self.selection_start} 到 {self.selection_end}")
+        TTS.speak(self._selection_summary())
 
     def on_grid_select(self, event):
         self.cursor_y = event.GetRow()
