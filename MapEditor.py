@@ -1438,33 +1438,37 @@ class MapEditorFrame(wx.Frame):
     def copy_selection(self, event):
         global CLIPBOARD
         dm = self.data_manager
-        CLIPBOARD = []
         bounds = self.get_selection_bounds()
-        if not bounds:
-            CLIPBOARD.append([dm.map_data[self.cursor_y][self.cursor_x]])
-            self._clear_selection()
-            self.update_status()
-            TTS.cancel()
-            TTS.speak("复制")
-            return
-        left, top, right, bottom = bounds
-
-        for y in range(top, bottom + 1):
-            row = []
-            for x in range(left, right + 1):
-                row.append(dm.map_data[y][x])
-            CLIPBOARD.append(row)
-
+        if bounds:
+            left, top, right, bottom = bounds
+            single = False
+        else:
+            left = right = self.cursor_x
+            top = bottom = self.cursor_y
+            single = True
+        CLIPBOARD = dm.snapshot_region(left, top, right, bottom)
         self._clear_selection()
         self.update_status()
         TTS.cancel()
-        TTS.speak("复制选区")
+        TTS.speak("复制" if single else "复制选区")
 
     def cut_selection(self, event):
-        self.copy_selection(event)
-        self.delete_selection(event)
+        global CLIPBOARD
+        dm = self.data_manager
+        bounds = self.get_selection_bounds()
+        if bounds:
+            left, top, right, bottom = bounds
+            single = False
+        else:
+            left = right = self.cursor_x
+            top = bottom = self.cursor_y
+            single = True
+        CLIPBOARD = dm.snapshot_region(left, top, right, bottom)
+        dm.clear_region(left, top, right, bottom)
+        self._clear_selection()
+        self.update_status()
         TTS.cancel()
-        TTS.speak("剪切选区")
+        TTS.speak("剪切" if single else "剪切选区")
 
     def delete_selection(self, event):
         dm = self.data_manager
@@ -1531,26 +1535,38 @@ class MapEditorFrame(wx.Frame):
     def paste_clipboard(self, event):
         global CLIPBOARD
         dm = self.data_manager
-        if CLIPBOARD is None:
+        if not CLIPBOARD:
             TTS.cancel()
             TTS.speak("剪贴板为空")
             return
-        paste_h = len(CLIPBOARD)
-        paste_w = len(CLIPBOARD[0]) if paste_h > 0 else 0
+        paste_h = CLIPBOARD.get("height", 0)
+        paste_w = CLIPBOARD.get("width", 0)
+        if paste_w <= 0 or paste_h <= 0:
+            TTS.cancel()
+            TTS.speak("剪贴板为空")
+            return
 
-        if self.cursor_y + paste_h > dm.height or self.cursor_x + paste_w > dm.width:
+        if (self.cursor_y + paste_h > dm.height
+                or self.cursor_x + paste_w > dm.width):
             wx.MessageBox(
                 "粘贴区域超出地图边界", "错误", wx.OK | wx.ICON_ERROR
             )
             return
 
-        changes = []
-        for dy, row in enumerate(CLIPBOARD):
-            for dx, tile_id in enumerate(row):
-                y = self.cursor_y + dy
-                x = self.cursor_x + dx
-                changes.append((x, y, tile_id))
-        dm.set_tiles_bulk(changes)
+        if dm.destination_has_content(
+            self.cursor_x, self.cursor_y, paste_w, paste_h
+        ):
+            result = wx.MessageBox(
+                "目标区域已有内容，是否覆盖？",
+                "确认",
+                wx.YES_NO | wx.ICON_QUESTION,
+            )
+            if int(result) != WX_YES:
+                TTS.cancel()
+                TTS.speak("已取消粘贴")
+                return
+
+        dm.paste_region(CLIPBOARD, self.cursor_x, self.cursor_y)
         self._clear_selection()
         TTS.cancel()
         TTS.speak("粘贴")

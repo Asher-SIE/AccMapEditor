@@ -14,6 +14,7 @@ from .commands import (
     SetCollisionCommand,
     ClearObjectsCommand,
     ResizeMapCommand,
+    CompositeCommand,
     TILE_SIZE,
 )
 
@@ -298,3 +299,102 @@ class MapDataManager(wx.EvtHandler):
         tw = max(1, obj.get("width", TILE_SIZE) // TILE_SIZE)
         th = max(1, obj.get("height", TILE_SIZE) // TILE_SIZE)
         return tx, ty, tw, th
+
+    def snapshot_region(self, left, top, right, bottom):
+        w = right - left + 1
+        h = bottom - top + 1
+        tiles = [
+            [self.map_data[y][x] for x in range(left, right + 1)]
+            for y in range(top, bottom + 1)
+        ]
+        collision = [
+            (cx - left, cy - top)
+            for (cx, cy) in self.collision_set
+            if left <= cx <= right and top <= cy <= bottom
+        ]
+        objects = []
+        for layer_idx, layer in enumerate(self.object_layers):
+            for obj in layer.get("objects", []):
+                ox = obj.get("x", 0)
+                oy = obj.get("y", 0)
+                tx = ox // TILE_SIZE
+                ty = oy // TILE_SIZE
+                if left <= tx <= right and top <= ty <= bottom:
+                    objects.append({
+                        "layer": layer_idx,
+                        "data": copy.deepcopy(obj),
+                        "rel_x_px": ox - left * TILE_SIZE,
+                        "rel_y_px": oy - top * TILE_SIZE,
+                    })
+        return {
+            "width": w,
+            "height": h,
+            "tiles": tiles,
+            "collision": collision,
+            "objects": objects,
+        }
+
+    def destination_has_content(self, dest_x, dest_y, w, h):
+        for (cx, cy) in self.collision_set:
+            if dest_x <= cx < dest_x + w and dest_y <= cy < dest_y + h:
+                return True
+        for layer in self.object_layers:
+            for obj in layer.get("objects", []):
+                tx = obj.get("x", 0) // TILE_SIZE
+                ty = obj.get("y", 0) // TILE_SIZE
+                if dest_x <= tx < dest_x + w and dest_y <= ty < dest_y + h:
+                    return True
+        return False
+
+    def clear_region(self, left, top, right, bottom):
+        tile_changes = [
+            (x, y, 0)
+            for y in range(top, bottom + 1)
+            for x in range(left, right + 1)
+        ]
+        collision_changes = [
+            (cx, cy, False)
+            for (cx, cy) in self.collision_set
+            if left <= cx <= right and top <= cy <= bottom
+        ]
+        objects_to_remove = []
+        for layer_idx, layer in enumerate(self.object_layers):
+            for obj in layer.get("objects", []):
+                tx = obj.get("x", 0) // TILE_SIZE
+                ty = obj.get("y", 0) // TILE_SIZE
+                if left <= tx <= right and top <= ty <= bottom:
+                    objects_to_remove.append((layer_idx, obj.get("id")))
+        cmds = []
+        if tile_changes:
+            cmds.append(BulkSetTilesCommand(tile_changes))
+        if collision_changes:
+            cmds.append(SetCollisionCommand(collision_changes))
+        for layer_idx, obj_id in objects_to_remove:
+            cmds.append(RemoveObjectCommand(layer_idx, obj_id))
+        if cmds:
+            self.execute(CompositeCommand(cmds))
+
+    def paste_region(self, snapshot, dest_x, dest_y):
+        tile_changes = [
+            (dest_x + dx, dest_y + dy, tile_id)
+            for dy, row in enumerate(snapshot["tiles"])
+            for dx, tile_id in enumerate(row)
+        ]
+        collision_changes = [
+            (dest_x + rx, dest_y + ry, True)
+            for (rx, ry) in snapshot["collision"]
+        ]
+        cmds = []
+        if tile_changes:
+            cmds.append(BulkSetTilesCommand(tile_changes))
+        if collision_changes:
+            cmds.append(SetCollisionCommand(collision_changes))
+        for obj_entry in snapshot["objects"]:
+            new_obj = copy.deepcopy(obj_entry["data"])
+            new_obj["x"] = dest_x * TILE_SIZE + obj_entry["rel_x_px"]
+            new_obj["y"] = dest_y * TILE_SIZE + obj_entry["rel_y_px"]
+            new_obj["id"] = self.next_object_id
+            self.next_object_id += 1
+            cmds.append(AddObjectCommand(obj_entry["layer"], new_obj))
+        if cmds:
+            self.execute(CompositeCommand(cmds))
