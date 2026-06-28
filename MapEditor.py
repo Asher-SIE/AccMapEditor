@@ -1333,6 +1333,101 @@ class MapEditorFrame(wx.Frame):
         bottom = max(y1, y2)
         return left, top, right, bottom
 
+    def _get_landmark_polygon_points(self):
+        points = []
+        for index in range(1, 11):
+            coord = self.landmarks.get(index)
+            if coord is not None:
+                points.append(coord)
+        return points
+
+    def _polygon_area2(self, points):
+        area2 = 0
+        for i, (x1, y1) in enumerate(points):
+            x2, y2 = points[(i + 1) % len(points)]
+            area2 += x1 * y2 - x2 * y1
+        return area2
+
+    def _orientation(self, a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def _point_on_segment(self, point, start, end):
+        if self._orientation(start, end, point) != 0:
+            return False
+        return (
+            min(start[0], end[0]) <= point[0] <= max(start[0], end[0])
+            and min(start[1], end[1]) <= point[1] <= max(start[1], end[1])
+        )
+
+    def _segments_intersect(self, a, b, c, d):
+        o1 = self._orientation(a, b, c)
+        o2 = self._orientation(a, b, d)
+        o3 = self._orientation(c, d, a)
+        o4 = self._orientation(c, d, b)
+        if o1 == 0 and self._point_on_segment(c, a, b):
+            return True
+        if o2 == 0 and self._point_on_segment(d, a, b):
+            return True
+        if o3 == 0 and self._point_on_segment(a, c, d):
+            return True
+        if o4 == 0 and self._point_on_segment(b, c, d):
+            return True
+        return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
+
+    def _polygon_self_intersects(self, points):
+        count = len(points)
+        for i in range(count):
+            a = points[i]
+            b = points[(i + 1) % count]
+            for j in range(i + 1, count):
+                if j == i or j == (i + 1) % count or i == (j + 1) % count:
+                    continue
+                c = points[j]
+                d = points[(j + 1) % count]
+                if self._segments_intersect(a, b, c, d):
+                    return True
+        return False
+
+    def _point_in_polygon(self, point, points):
+        x, y = point
+        inside = False
+        for i, start in enumerate(points):
+            end = points[(i + 1) % len(points)]
+            if self._point_on_segment(point, start, end):
+                return True
+            x1, y1 = start
+            x2, y2 = end
+            if (y1 > y) != (y2 > y):
+                intersect_x = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+                if x < intersect_x:
+                    inside = not inside
+        return inside
+
+    def _get_landmark_polygon_fill_cells(self):
+        dm = self.data_manager
+        points = self._get_landmark_polygon_points()
+        if len(points) < 3:
+            return None
+        if len(set(points)) < 3 or self._polygon_area2(points) == 0:
+            TTS.cancel()
+            TTS.speak("路标无法组成封闭区域")
+            return []
+        if self._polygon_self_intersects(points):
+            TTS.cancel()
+            TTS.speak("路标图形交叉，无法填充")
+            return []
+
+        left = max(0, min(x for x, _ in points))
+        right = min(dm.width - 1, max(x for x, _ in points))
+        top = max(0, min(y for _, y in points))
+        bottom = min(dm.height - 1, max(y for _, y in points))
+        cells = []
+        for y in range(top, bottom + 1):
+            for x in range(left, right + 1):
+                if self._point_in_polygon((x, y), points):
+                    cells.append((x, y))
+        return cells
+
     def copy_selection(self, event):
         global CLIPBOARD
         dm = self.data_manager
@@ -1401,7 +1496,11 @@ class MapEditorFrame(wx.Frame):
                 for x in range(left, right + 1):
                     changes.append((x, y, tile_id))
         else:
-            changes.append((self.cursor_x, self.cursor_y, tile_id))
+            polygon_cells = self._get_landmark_polygon_fill_cells()
+            if polygon_cells is None:
+                changes.append((self.cursor_x, self.cursor_y, tile_id))
+            else:
+                changes.extend((x, y, tile_id) for x, y in polygon_cells)
         if changes:
             self._promote_tile_definition_to_map(tile_id)
             dm.set_tiles_bulk(changes)
