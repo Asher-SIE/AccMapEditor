@@ -412,6 +412,7 @@ class MapEditorFrame(wx.Frame):
 
         self.selection_start = None
         self.selection_end = None
+        self._shift_selecting = False
 
         self.object_manager_dlg = None
         self.object_clipboard = None
@@ -703,6 +704,7 @@ class MapEditorFrame(wx.Frame):
         self.grid.SetColLabelSize(30)
 
         self.grid.Bind(wx.EVT_KEY_DOWN, self.on_key_down)
+        self.grid.Bind(wx.EVT_KEY_UP, self.on_key_up)
         self.grid.Bind(gridlib.EVT_GRID_SELECT_CELL, self.on_grid_select)
 
         main_sizer.Add(self.grid, 1, wx.EXPAND | wx.ALL, 5)
@@ -1180,12 +1182,21 @@ class MapEditorFrame(wx.Frame):
                 TTS.speak("格式错误")
         dlg.Destroy()
 
+    def on_key_up(self, event):
+        if not event.ShiftDown():
+            self._shift_selecting = False
+        event.Skip()
+
     def on_key_down(self, event):
         key = event.GetKeyCode()
         modifiers = event.GetModifiers()
         moved = False
 
         dm = self.data_manager
+        arrow_keys = [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]
+        is_shift_arrow = key in arrow_keys and modifiers == wx.MOD_SHIFT
+        if not is_shift_arrow:
+            self._shift_selecting = False
 
         if event.ControlDown() and not event.AltDown() and key in (ord("`"), ord("~")):
             self._clear_landmarks()
@@ -1200,7 +1211,7 @@ class MapEditorFrame(wx.Frame):
                 self._jump_to_landmark(landmark_index)
                 return
 
-        if key in [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]:
+        if key in arrow_keys:
             old_x, old_y = self.cursor_x, self.cursor_y
             if key == wx.WXK_LEFT and self.cursor_x > 0:
                 self.cursor_x -= 1
@@ -1215,9 +1226,10 @@ class MapEditorFrame(wx.Frame):
                 self.cursor_y += 1
                 moved = True
             if moved and modifiers == wx.MOD_SHIFT:
-                if not self.selection_start or not self.selection_end:
+                if not self._shift_selecting:
                     self._clear_selection()
                     self.selection_start = (old_x, old_y)
+                    self._shift_selecting = True
                 self.selection_end = (self.cursor_x, self.cursor_y)
                 left, top, right, bottom = self.get_selection_bounds()
                 self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
