@@ -1077,10 +1077,17 @@ class MapEditorFrame(wx.Frame):
             x2, y2 = self.selection_end
             coord_info += f" 选区: ({x1},{y1}) 到 ({x2},{y2})"
 
+        landmark_prefix = ""
+        for idx, (lx, ly) in self.landmarks.items():
+            if lx == self.cursor_x and ly == self.cursor_y:
+                label = "0" if idx == 10 else str(idx)
+                landmark_prefix = f"路标{label}；"
+                break
+
         if obj_info:
-            status_text = f"{coord_info} ； {obj_info} ； {tile_name}"
+            status_text = f"{landmark_prefix}{coord_info} ； {obj_info} ； {tile_name}"
         else:
-            status_text = f"{coord_info} ； {tile_name}"
+            status_text = f"{landmark_prefix}{coord_info} ； {tile_name}"
         self.status_label.SetLabel(status_text)
 
         if not getattr(self, "_silent_status", False):
@@ -1089,9 +1096,9 @@ class MapEditorFrame(wx.Frame):
                 "碰撞" if (self.cursor_x, self.cursor_y) in dm.collision_set else ""
             )
             if obj_tts:
-                TTS.speak(f"{obj_tts} {tile_name} {collision_info} {coord_info}")
+                TTS.speak(f"{landmark_prefix}{obj_tts} {tile_name} {collision_info} {coord_info}")
             else:
-                TTS.speak(f"{tile_name} {collision_info} {coord_info}")
+                TTS.speak(f"{landmark_prefix}{tile_name} {collision_info} {coord_info}")
         self.status_label.Refresh()
         wx.Yield()
 
