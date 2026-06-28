@@ -397,6 +397,7 @@ class MapEditorFrame(wx.Frame):
 
         self.cursor_x = 0
         self.cursor_y = 0
+        self.landmarks = {}
         self.current_file = None
         self._clean_map_state = None
 
@@ -727,6 +728,23 @@ class MapEditorFrame(wx.Frame):
         redo_item = edit_menu.Append(wx.ID_REDO, "重做\tCtrl+Y")
         edit_menu.AppendSeparator()
         goto_item = edit_menu.Append(wx.ID_ANY, "跳转单元格...\tCtrl+G")
+        landmark_menu = wx.Menu()
+        for i in range(1, 11):
+            label = "0" if i == 10 else str(i)
+            mark_item = landmark_menu.Append(wx.ID_ANY, f"标记{label}")
+            jump_item = landmark_menu.Append(wx.ID_ANY, f"跳转到{label}")
+            self.Bind(
+                wx.EVT_MENU,
+                lambda event, index=i: self._add_landmark(index),
+                mark_item,
+            )
+            self.Bind(
+                wx.EVT_MENU,
+                lambda event, index=i: self._jump_to_landmark(index),
+                jump_item,
+            )
+        clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, "清理")
+        edit_menu.AppendSubMenu(landmark_menu, "路标")
         edit_menu.AppendSeparator()
         clear_item = edit_menu.Append(wx.ID_ANY, "清除选区\tEsc")
         delete_item = edit_menu.Append(wx.ID_ANY, "清除单元格\tBackspace")
@@ -799,6 +817,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.cut_selection, cut_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
         self.Bind(wx.EVT_MENU, self.on_goto_cell, goto_item)
+        self.Bind(wx.EVT_MENU, self._clear_landmarks, clear_landmarks_item)
         self.Bind(wx.EVT_MENU, self.on_add_object, add_object_item)
         self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
         self.Bind(wx.EVT_MENU, self.on_delete_object, delete_object_item)
@@ -942,6 +961,7 @@ class MapEditorFrame(wx.Frame):
         self._sync_tile_definitions()
         self.cursor_x = 0
         self.cursor_y = 0
+        self.landmarks.clear()
         self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
         self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
         self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
@@ -1031,15 +1051,7 @@ class MapEditorFrame(wx.Frame):
 
     def update_status(self):
         dm = self.data_manager
-        tile_id = str(dm.map_data[self.cursor_y][self.cursor_x])
-        tile_data = self.tile_definitions.get(tile_id)
-        if tile_data:
-            if isinstance(tile_data, dict):
-                tile_name = tile_data.get("name", f"未知({tile_id})")
-            else:
-                tile_name = tile_data
-        else:
-            tile_name = f"未知({tile_id})"
+        tile_name = self._get_tile_name(self.cursor_x, self.cursor_y)
 
         _, obj = dm.find_object_at(self.cursor_x, self.cursor_y)
         obj_info = ""
@@ -1081,6 +1093,58 @@ class MapEditorFrame(wx.Frame):
         self.status_label.Refresh()
         wx.Yield()
 
+    def _get_tile_name(self, x, y):
+        dm = self.data_manager
+        tile_id = str(dm.map_data[y][x])
+        tile_data = self.tile_definitions.get(tile_id)
+        if tile_data:
+            if isinstance(tile_data, dict):
+                return tile_data.get("name", f"未知({tile_id})")
+            else:
+                return tile_data
+        return f"未知({tile_id})"
+
+    def _route_key_index(self, key):
+        if key == ord("0"):
+            return 10
+        if ord("1") <= key <= ord("9"):
+            return key - ord("0")
+        return None
+
+    def _move_grid_cursor(self, x, y):
+        self.cursor_x = x
+        self.cursor_y = y
+        self.grid.SelectBlock(y, x, y, x)
+        self.grid.MakeCellVisible(y, x)
+        self.grid.SetGridCursor(y, x)
+        self.update_status()
+
+    def _add_landmark(self, index):
+        self.landmarks[index] = (self.cursor_x, self.cursor_y)
+        tile_name = self._get_tile_name(self.cursor_x, self.cursor_y)
+        TTS.cancel()
+        TTS.speak(f"已添加 {tile_name}，{self.cursor_x}，{self.cursor_y}")
+
+    def _clear_landmarks(self, event=None):
+        self.landmarks.clear()
+        TTS.cancel()
+        TTS.speak("已清理所有路标")
+
+    def _jump_to_landmark(self, index):
+        coord = self.landmarks.get(index)
+        if coord is None:
+            TTS.cancel()
+            TTS.speak("未设置路标")
+            return
+        x, y = coord
+        dm = self.data_manager
+        if not (0 <= x < dm.width and 0 <= y < dm.height):
+            self.landmarks.pop(index, None)
+            TTS.cancel()
+            TTS.speak("路标已超出范围")
+            return
+        self._move_grid_cursor(x, y)
+
     def on_goto_cell(self, event):
         dlg = wx.TextEntryDialog(
             self, "输入目标坐标（格式：x,y）", "跳转单元格", ""
@@ -1113,6 +1177,19 @@ class MapEditorFrame(wx.Frame):
         moved = False
 
         dm = self.data_manager
+
+        if event.ControlDown() and not event.AltDown() and key in (ord("`"), ord("~")):
+            self._clear_landmarks()
+            return
+
+        landmark_index = self._route_key_index(key)
+        if landmark_index is not None:
+            if modifiers == wx.MOD_CONTROL:
+                self._add_landmark(landmark_index)
+                return
+            if modifiers == wx.MOD_NONE:
+                self._jump_to_landmark(landmark_index)
+                return
 
         if key in [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN]:
             old_x, old_y = self.cursor_x, self.cursor_y
@@ -1494,6 +1571,7 @@ class MapEditorFrame(wx.Frame):
 
             self.cursor_x = 0
             self.cursor_y = 0
+            self.landmarks.clear()
             self.grid.SetGridCursor(self.cursor_y, self.cursor_x)
             self.grid.SelectBlock(self.cursor_y, self.cursor_x, self.cursor_y, self.cursor_x)
             self.grid.MakeCellVisible(self.cursor_y, self.cursor_x)
