@@ -59,6 +59,15 @@ class TileSelectionDialog(wx.Dialog):
             else:
                 choices.append(f"{k}: {name}")
             self.tile_keys.append(k)
+        self.original_choices = choices[:]
+        self.original_tile_keys = self.tile_keys[:]
+
+        filter_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        filter_sizer.Add(wx.StaticText(self, label="筛选:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+        self.filter_input = wx.TextCtrl(self, style=wx.TE_PROCESS_ENTER)
+        filter_sizer.Add(self.filter_input, 1, wx.EXPAND | wx.ALL, 5)
+        sizer.Add(filter_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
         self.listbox = wx.ListBox(self, choices=choices)
         if choices:
             self.listbox.SetSelection(0)
@@ -67,6 +76,11 @@ class TileSelectionDialog(wx.Dialog):
         btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btn_sizer, 0, wx.ALL | wx.EXPAND, 10)
         self.SetSizer(sizer)
+
+        self.filter_input.Bind(wx.EVT_TEXT, self.on_filter_changed)
+        self.listbox.Bind(wx.EVT_KEY_DOWN, self.on_listbox_keydown)
+        self.filter_input.Bind(wx.EVT_KEY_DOWN, self.on_filter_keydown)
+
         self.listbox.SetFocus()
 
     def GetSelectedTileId(self):
@@ -74,6 +88,49 @@ class TileSelectionDialog(wx.Dialog):
         if sel != wx.NOT_FOUND:
             return self.tile_keys[sel]
         return 0
+
+    def on_filter_changed(self, event):
+        filter_text = self.filter_input.GetValue().strip()
+        if not filter_text:
+            self.listbox.Set(self.original_choices)
+            self.tile_keys = self.original_tile_keys[:]
+            if self.original_choices:
+                self.listbox.SetSelection(0)
+            return
+
+        is_numeric = filter_text.isdigit()
+        filtered_choices = []
+        filtered_keys = []
+
+        for choice, key in zip(self.original_choices, self.original_tile_keys):
+            if is_numeric:
+                if filter_text in str(key):
+                    filtered_choices.append(choice)
+                    filtered_keys.append(key)
+            else:
+                choice_lower = choice.lower()
+                if filter_text.lower() in choice_lower:
+                    filtered_choices.append(choice)
+                    filtered_keys.append(key)
+
+        self.listbox.Set(filtered_choices)
+        self.tile_keys = filtered_keys
+        if filtered_choices:
+            self.listbox.SetSelection(0)
+
+        event.Skip()
+
+    def on_listbox_keydown(self, event):
+        if event.GetKeyCode() == wx.WXK_TAB:
+            self.filter_input.SetFocus()
+            return
+        event.Skip()
+
+    def on_filter_keydown(self, event):
+        if event.GetKeyCode() == wx.WXK_TAB and event.ShiftDown():
+            self.listbox.SetFocus()
+            return
+        event.Skip()
 
 
 class ResizeDialog(wx.Dialog):
