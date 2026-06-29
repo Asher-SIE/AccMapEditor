@@ -240,6 +240,88 @@ class MapPropertiesDialog(wx.Dialog):
         return self.prop_panel.get_properties()
 
 
+class ShapeGenerationDialog(wx.Dialog):
+    def __init__(self, parent, current_x, current_y):
+        super().__init__(parent, title="生成图形")
+
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        coord_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        coord_sizer.Add(wx.StaticText(self, label="X坐标:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.x_ctrl = wx.SpinCtrl(self, value=str(current_x), min=-1000, max=1000)
+        coord_sizer.Add(self.x_ctrl, 0, wx.RIGHT, 10)
+        coord_sizer.Add(wx.StaticText(self, label="Y坐标:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.y_ctrl = wx.SpinCtrl(self, value=str(current_y), min=-1000, max=1000)
+        coord_sizer.Add(self.y_ctrl, 0)
+        sizer.Add(coord_sizer, 0, wx.ALL, 5)
+
+        anchor_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        anchor_sizer.Add(wx.StaticText(self, label="坐标基准:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.anchor_choice = wx.Choice(self, choices=["中心点", "左上角"])
+        self.anchor_choice.SetSelection(0)
+        anchor_sizer.Add(self.anchor_choice, 1)
+        sizer.Add(anchor_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        shape_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        shape_sizer.Add(wx.StaticText(self, label="图形:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.shape_choice = wx.Choice(self, choices=["矩形", "椭圆", "菱形", "三角形", "路标多边形"])
+        self.shape_choice.SetSelection(0)
+        shape_sizer.Add(self.shape_choice, 1)
+        sizer.Add(shape_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        size_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        size_sizer.Add(wx.StaticText(self, label="长:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.width_ctrl = wx.SpinCtrl(self, value="5", min=1, max=1000)
+        size_sizer.Add(self.width_ctrl, 0, wx.RIGHT, 10)
+        size_sizer.Add(wx.StaticText(self, label="宽:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.height_ctrl = wx.SpinCtrl(self, value="5", min=1, max=1000)
+        size_sizer.Add(self.height_ctrl, 0)
+        sizer.Add(size_sizer, 0, wx.ALL, 5)
+
+        mode_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        mode_sizer.Add(wx.StaticText(self, label="模式:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.mode_choice = wx.Choice(self, choices=["实心", "边框"])
+        self.mode_choice.SetSelection(0)
+        mode_sizer.Add(self.mode_choice, 1)
+        sizer.Add(mode_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        border_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        border_sizer.Add(wx.StaticText(self, label="边框粗细:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.thickness_ctrl = wx.SpinCtrl(self, value="1", min=1, max=1000)
+        border_sizer.Add(self.thickness_ctrl, 0, wx.RIGHT, 10)
+        border_sizer.Add(wx.StaticText(self, label="方向:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.border_direction_choice = wx.Choice(self, choices=["向内", "向外"])
+        self.border_direction_choice.SetSelection(0)
+        border_sizer.Add(self.border_direction_choice, 1)
+        sizer.Add(border_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+        sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        self.SetSizer(sizer)
+        self.Fit()
+        self.mode_choice.Bind(wx.EVT_CHOICE, self.on_mode_changed)
+        self.on_mode_changed(None)
+
+    def on_mode_changed(self, event):
+        is_border = self.mode_choice.GetStringSelection() == "边框"
+        self.thickness_ctrl.Enable(is_border)
+        self.border_direction_choice.Enable(is_border)
+
+    def get_config(self):
+        return {
+            "x": self.x_ctrl.GetValue(),
+            "y": self.y_ctrl.GetValue(),
+            "anchor": self.anchor_choice.GetStringSelection(),
+            "shape": self.shape_choice.GetStringSelection(),
+            "width": self.width_ctrl.GetValue(),
+            "height": self.height_ctrl.GetValue(),
+            "mode": self.mode_choice.GetStringSelection(),
+            "thickness": self.thickness_ctrl.GetValue(),
+            "border_direction": self.border_direction_choice.GetStringSelection(),
+        }
+
+
 class CustomTileDialog(wx.Frame):
     def __init__(self, parent, tile_defs, tile_sources=None):
         super().__init__(parent, title="编辑瓦片", size=(800, 600))
@@ -815,6 +897,7 @@ class MapEditorFrame(wx.Frame):
             wx.ID_ANY, "选区结束点\tCtrl+Enter"
         )
         fill_item = edit_menu.Append(wx.ID_ANY, "填充选区\tCtrl+F")
+        generate_shape_item = edit_menu.Append(wx.ID_ANY, "生成图形...")
         edit_menu.AppendSeparator()
         copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
         cut_item = edit_menu.Append(wx.ID_ANY, "剪切\tCtrl+X")
@@ -872,6 +955,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_selection_start, selection_start_item)
         self.Bind(wx.EVT_MENU, self.on_selection_end, selection_end_item)
         self.Bind(wx.EVT_MENU, self.on_fill_selection, fill_item)
+        self.Bind(wx.EVT_MENU, self.on_generate_shape, generate_shape_item)
         self.Bind(wx.EVT_MENU, self.copy_selection, copy_item)
         self.Bind(wx.EVT_MENU, self.cut_selection, cut_item)
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
@@ -1467,9 +1551,8 @@ class MapEditorFrame(wx.Frame):
                     inside = not inside
         return inside
 
-    def _get_landmark_polygon_fill_cells(self):
+    def _get_polygon_fill_cells(self, points):
         dm = self.data_manager
-        points = self._get_landmark_polygon_points()
         if len(points) < 3:
             return None
         if len(set(points)) < 3 or self._polygon_area2(points) == 0:
@@ -1481,16 +1564,140 @@ class MapEditorFrame(wx.Frame):
             TTS.speak("路标图形交叉，无法填充")
             return []
 
-        left = max(0, min(x for x, _ in points))
-        right = min(dm.width - 1, max(x for x, _ in points))
-        top = max(0, min(y for _, y in points))
-        bottom = min(dm.height - 1, max(y for _, y in points))
+        left = min(x for x, _ in points)
+        right = max(x for x, _ in points)
+        top = min(y for _, y in points)
+        bottom = max(y for _, y in points)
         cells = []
         for y in range(top, bottom + 1):
             for x in range(left, right + 1):
-                if self._point_in_polygon((x, y), points):
+                if 0 <= x < dm.width and 0 <= y < dm.height and self._point_in_polygon((x, y), points):
                     cells.append((x, y))
         return cells
+
+    def _get_landmark_polygon_fill_cells(self):
+        points = self._get_landmark_polygon_points()
+        if len(points) < 3:
+            return None
+        return self._get_polygon_fill_cells(points)
+
+    def _shape_left_top(self, x, y, width, height, anchor):
+        if anchor == "中心点":
+            return x - width // 2, y - height // 2
+        return x, y
+
+    def _get_shape_solid_cells(self, shape, left, top, width, height):
+        if width <= 0 or height <= 0:
+            return set()
+
+        if shape == "路标多边形":
+            cells = self._get_landmark_polygon_fill_cells()
+            return set(cells or [])
+
+        if shape == "三角形":
+            points = [
+                (left + width // 2, top),
+                (left, top + height - 1),
+                (left + width - 1, top + height - 1),
+            ]
+            cells = self._get_polygon_fill_cells(points)
+            return set(cells or [])
+
+        cells = set()
+        center_x = (width - 1) / 2
+        center_y = (height - 1) / 2
+        radius_x = max(center_x, 0.5)
+        radius_y = max(center_y, 0.5)
+
+        for y in range(top, top + height):
+            for x in range(left, left + width):
+                rel_x = x - left
+                rel_y = y - top
+                if shape == "矩形":
+                    cells.add((x, y))
+                elif shape == "椭圆":
+                    dx = (rel_x - center_x) / radius_x
+                    dy = (rel_y - center_y) / radius_y
+                    if dx * dx + dy * dy <= 1:
+                        cells.add((x, y))
+                elif shape == "菱形":
+                    dx = abs(rel_x - center_x) / radius_x
+                    dy = abs(rel_y - center_y) / radius_y
+                    if dx + dy <= 1:
+                        cells.add((x, y))
+        return cells
+
+    def _erode_cells(self, cells, steps):
+        current = set(cells)
+        neighbors = [
+            (-1, -1), (0, -1), (1, -1),
+            (-1, 0), (0, 0), (1, 0),
+            (-1, 1), (0, 1), (1, 1),
+        ]
+        for _ in range(steps):
+            current = {
+                (x, y)
+                for x, y in current
+                if all((x + dx, y + dy) in current for dx, dy in neighbors)
+            }
+            if not current:
+                break
+        return current
+
+    def _dilate_cells(self, cells, steps):
+        current = set(cells)
+        neighbors = [
+            (-1, -1), (0, -1), (1, -1),
+            (-1, 0), (0, 0), (1, 0),
+            (-1, 1), (0, 1), (1, 1),
+        ]
+        for _ in range(steps):
+            expanded = set(current)
+            for x, y in current:
+                for dx, dy in neighbors:
+                    expanded.add((x + dx, y + dy))
+            current = expanded
+        return current
+
+    def _get_shape_cells(self, config):
+        left, top = self._shape_left_top(
+            config["x"],
+            config["y"],
+            config["width"],
+            config["height"],
+            config["anchor"],
+        )
+        solid_cells = self._get_shape_solid_cells(
+            config["shape"], left, top, config["width"], config["height"]
+        )
+
+        if config["mode"] == "边框":
+            thickness = max(1, config["thickness"])
+            inner_cells = self._erode_cells(solid_cells, 1)
+            if config["border_direction"] == "向外":
+                outer_cells = self._dilate_cells(solid_cells, thickness - 1)
+                cells = outer_cells - inner_cells
+            else:
+                inner_cells = self._erode_cells(solid_cells, thickness)
+                cells = solid_cells - inner_cells
+        else:
+            cells = solid_cells
+
+        dm = self.data_manager
+        return sorted(
+            (x, y)
+            for x, y in cells
+            if 0 <= x < dm.width and 0 <= y < dm.height
+        )
+
+    def _shape_feedback_size(self, config, cells):
+        if cells:
+            left = min(x for x, _ in cells)
+            right = max(x for x, _ in cells)
+            top = min(y for _, y in cells)
+            bottom = max(y for _, y in cells)
+            return right - left + 1, bottom - top + 1
+        return config["width"], config["height"]
 
     def copy_selection(self, event):
         global CLIPBOARD
@@ -1553,6 +1760,32 @@ class MapEditorFrame(wx.Frame):
             self._fill_selection(tile_id)
             self.Refresh()
         dlg.Destroy()
+
+    def on_generate_shape(self, event):
+        tile_dlg = TileSelectionDialog(
+            self, self.tile_definitions, self.tile_definition_sources
+        )
+        if tile_dlg.ShowModal() != wx.ID_OK:
+            tile_dlg.Destroy()
+            return
+        tile_id = tile_dlg.GetSelectedTileId()
+        tile_dlg.Destroy()
+
+        shape_dlg = ShapeGenerationDialog(self, self.cursor_x, self.cursor_y)
+        if shape_dlg.ShowModal() == wx.ID_OK:
+            config = shape_dlg.get_config()
+            cells = self._get_shape_cells(config)
+            if cells:
+                self._promote_tile_definition_to_map(tile_id)
+                self.data_manager.set_tiles_bulk([(x, y, tile_id) for x, y in cells])
+                self._clear_selection()
+                width, height = self._shape_feedback_size(config, cells)
+                TTS.cancel()
+                TTS.speak(f"生成{config['shape']}，长{width}宽{height}")
+            else:
+                TTS.cancel()
+                TTS.speak("没有可生成的图形")
+        shape_dlg.Destroy()
 
     def _fill_selection(self, tile_id):
         dm = self.data_manager
