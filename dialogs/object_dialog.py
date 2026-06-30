@@ -363,11 +363,8 @@ class PropertyListPanel(wx.Panel):
         dlg = StructuredValueDialog(self, "添加属性", value="", require_name=True)
         if dlg.ShowModal() == wx.ID_OK:
             name = dlg.get_name()
-            if name in self.properties:
-                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
-            else:
-                self.properties[name] = dlg.get_value()
-                self.refresh_prop_list()
+            self.properties[name] = dlg.get_value()
+            self.refresh_prop_list()
         dlg.Destroy()
 
     def on_edit_prop(self, event):
@@ -385,13 +382,10 @@ class PropertyListPanel(wx.Panel):
         )
         if dlg.ShowModal() == wx.ID_OK:
             new_name = dlg.get_name()
-            if new_name != old_name and new_name in self.properties:
-                wx.MessageBox("属性名已存在！", "提示", wx.OK | wx.ICON_WARNING)
-            else:
-                if new_name != old_name:
-                    del self.properties[old_name]
-                self.properties[new_name] = dlg.get_value()
-                self.refresh_prop_list()
+            if new_name != old_name:
+                del self.properties[old_name]
+            self.properties[new_name] = dlg.get_value()
+            self.refresh_prop_list()
         dlg.Destroy()
 
     def on_del_prop(self, event):
