@@ -12,6 +12,8 @@ from map_data import MapDataManager, EVT_MAP_DATA, MapDataEvent, TILE_SIZE
 from map_data.commands import TILE_SIZE as CMD_TILE_SIZE
 from dialogs.object_dialog import ObjectDialog, PropertyListPanel, format_property_value
 from dialogs.object_manager import ObjectManagerDialog
+from data_editor.tree_panel import TreePanel
+from data_editor.placeholder_panel import DataPlaceholderPanel
 
 
 TILE_DEFINITIONS = {}
@@ -828,13 +830,20 @@ class MapEditorFrame(wx.Frame):
         self._sync_tile_definitions()
 
     def init_ui(self):
-        panel = wx.Panel(self)
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE | wx.SP_BORDER)
+        splitter.SetMinimumPaneSize(220)
 
-        self.status_label = wx.StaticText(panel, label="")
-        main_sizer.Add(self.status_label, 0, wx.ALL, 5)
+        self.editor_config = self._load_editor_config()
 
-        self.grid = gridlib.Grid(panel)
+        self.tree_panel = TreePanel(splitter, on_select=self._on_tree_select)
+
+        self.main_book = wx.Simplebook(splitter)
+
+        map_panel = wx.Panel(self.main_book)
+        map_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.status_label = wx.StaticText(map_panel, label="")
+        map_sizer.Add(self.status_label, 0, wx.ALL, 5)
+        self.grid = gridlib.Grid(map_panel)
         self.grid.CreateGrid(self.data_manager.height, self.data_manager.width)
 
         self.grid.EnableEditing(False)
@@ -846,9 +855,75 @@ class MapEditorFrame(wx.Frame):
         self.grid.Bind(wx.EVT_KEY_UP, self.on_key_up)
         self.grid.Bind(gridlib.EVT_GRID_SELECT_CELL, self.on_grid_select)
 
-        main_sizer.Add(self.grid, 1, wx.EXPAND | wx.ALL, 5)
-        panel.SetSizer(main_sizer)
+        map_sizer.Add(self.grid, 1, wx.EXPAND | wx.ALL, 5)
+        map_panel.SetSizer(map_sizer)
+        self.main_book.AddPage(map_panel, "")
+
+        self.data_panel = DataPlaceholderPanel(self.main_book)
+        self.main_book.AddPage(self.data_panel, "")
+
+        splitter.SplitVertically(self.tree_panel, self.main_book, 380)
+        self.splitter = splitter
+
+        self.main_book.SetSelection(0)
+
+        self.tree_panel.populate(self.editor_config)
+
         self.grid.SetFocus()
+
+    def _load_editor_config(self):
+        config_path = "./editor_config.json"
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {
+                "data_dir": "",
+                "map_dir": "",
+                "backup_dir": "data_backup",
+                "entity_files": [],
+                "config_files": [],
+            }
+
+    def _load_data_file(self, path):
+        if not path:
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def _on_tree_select(self, info):
+        if not hasattr(self, "main_book"):
+            return
+        kind = info.get("kind")
+        if kind == "map_file":
+            if not self._confirm_save_if_modified():
+                self.tree_panel.select_first_map()
+                return
+            if self.load_from_tiled_json(info["path"]):
+                self.current_file = info["path"]
+                self._mark_map_clean()
+                self.update_title()
+                self.main_book.SetSelection(0)
+                self.grid.SetFocus()
+            return
+        if kind == "map_root":
+            self.main_book.SetSelection(0)
+            self.grid.SetFocus()
+            return
+        if kind in (
+            "data_root",
+            "entity_file",
+            "config_file",
+            "entity",
+            "entity_group",
+            "other_root",
+        ):
+            self.main_book.SetSelection(1)
+            self.data_panel.show_info(info, data_loader=self._load_data_file)
+            return
 
     def create_menu(self):
         menubar = wx.MenuBar()
@@ -1115,6 +1190,8 @@ class MapEditorFrame(wx.Frame):
         self.update_title()
 
     def on_exit(self, event):
+        if not self._confirm_save_if_modified():
+            return
         result = wx.MessageBox(
             "是否退出地图编辑器？", "确认退出", wx.YES_NO | wx.ICON_QUESTION
         )

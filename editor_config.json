@@ -1,0 +1,38 @@
+{
+  "data_dir": "D:/Desktop/Dreamspin/assets/data",
+  "map_dir": "D:/Desktop/Dreamspin/assets/maps",
+  "backup_dir": "data_backup",
+  "entity_files": [
+    {"id": "items", "display": "物品"},
+    {"id": "skills", "display": "技能"},
+    {"id": "monsters", "display": "怪物"},
+    {"id": "npcs", "display": "NPC"},
+    {"id": "equipments", "display": "装备"},
+    {"id": "companions", "display": "伙伴模板"},
+    {"id": "quests", "display": "任务"},
+    {"id": "dialogues", "display": "对话"},
+    {"id": "factions", "display": "阵营"},
+    {"id": "crops", "display": "作物"},
+    {"id": "animals", "display": "动物"},
+    {"id": "shops", "display": "商店"},
+    {"id": "spawns", "display": "生成"},
+    {"id": "races", "display": "种族"},
+    {"id": "vehicles", "display": "载具"},
+    {"id": "objects", "display": "对象"}
+  ],
+  "config_files": [
+    {"id": "level_config", "display": "等级配置"},
+    {"id": "economy_config", "display": "经济配置"},
+    {"id": "movement_config", "display": "移动配置"},
+    {"id": "weather_config", "display": "天气配置"},
+    {"id": "marriage_config", "display": "婚姻配置"},
+    {"id": "membership_config", "display": "会员配置"},
+    {"id": "intimacy_config", "display": "亲密度配置"},
+    {"id": "leaderboards", "display": "排行榜"},
+    {"id": "ui_categories", "display": "UI分类"},
+    {"id": "companion_config", "display": "伙伴配置"},
+    {"id": "companion_level_config", "display": "伙伴等级"},
+    {"id": "gems", "display": "宝石"},
+    {"id": "status_effects", "display": "状态效果"}
+  ]
+}
