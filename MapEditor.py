@@ -560,6 +560,7 @@ class MapEditorFrame(wx.Frame):
 
         self.init_ui()
         self.create_menu()
+        self._set_map_mode(True)
         self._subscribe_events()
         self._mark_map_clean()
         self.update_status()
@@ -974,10 +975,12 @@ class MapEditorFrame(wx.Frame):
                 self._mark_map_clean()
                 self.update_title()
                 self.main_book.SetSelection(0)
+                self._set_map_mode(True)
                 self.grid.SetFocus()
             return
         if kind == "map_root":
             self.main_book.SetSelection(0)
+            self._set_map_mode(True)
             self.grid.SetFocus()
             return
         if kind == "data_file":
@@ -986,25 +989,34 @@ class MapEditorFrame(wx.Frame):
                 if self.data_panel.is_file_modified() and not self._confirm_data_save():
                     return
             self.main_book.SetSelection(1)
+            self._set_map_mode(False)
             self.data_panel.select(info)
+            self.data_panel.browser.list.SetFocus()
             self.update_title()
             return
         if kind in ("data_root", "other_root"):
             self.main_book.SetSelection(1)
+            self._set_map_mode(False)
             return
 
     def create_menu(self):
         menubar = wx.MenuBar()
+        self._map_menu_items = []
+
+        def map_item(menu, id_, text):
+            item = menu.Append(id_, text)
+            self._map_menu_items.append(item)
+            return item
 
         file_menu = wx.Menu()
         open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
         import_data_item = file_menu.Append(wx.ID_ANY, "导入数据源...\t&I")
-        close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件\t&L")
+        close_item = map_item(file_menu, wx.ID_ANY, "关闭当前文件\t&L")
         save_item = file_menu.Append(wx.ID_SAVE, "保存...\tCtrl+S")
         save_as_item = file_menu.Append(wx.ID_SAVEAS, "另存为...\tCtrl+Shift+S")
-        resize_item = file_menu.Append(wx.ID_ANY, "调整地图尺寸...\t&R")
-        custom_tile_item = file_menu.Append(wx.ID_ANY, "编辑瓦片...\t&C")
-        map_prop_item = file_menu.Append(wx.ID_ANY, "编辑地图属性...\t&M")
+        resize_item = map_item(file_menu, wx.ID_ANY, "调整地图尺寸...\t&R")
+        custom_tile_item = map_item(file_menu, wx.ID_ANY, "编辑瓦片...\t&C")
+        map_prop_item = map_item(file_menu, wx.ID_ANY, "编辑地图属性...\t&M")
         file_menu.AppendSeparator()
         exit_item = file_menu.Append(wx.ID_EXIT, "退出\t&X")
 
@@ -1012,12 +1024,14 @@ class MapEditorFrame(wx.Frame):
         undo_item = edit_menu.Append(wx.ID_UNDO, "撤销\tCtrl+Z")
         redo_item = edit_menu.Append(wx.ID_REDO, "重做\tCtrl+Y")
         edit_menu.AppendSeparator()
-        goto_item = edit_menu.Append(wx.ID_ANY, "跳转单元格...\tCtrl+G")
+        goto_item = map_item(edit_menu, wx.ID_ANY, "跳转单元格...\tCtrl+G")
         landmark_menu = wx.Menu()
         for i in range(1, 11):
             label = "0" if i == 10 else str(i)
             mark_item = landmark_menu.Append(wx.ID_ANY, f"标记{label}")
             jump_item = landmark_menu.Append(wx.ID_ANY, f"跳转到{label}")
+            self._map_menu_items.append(mark_item)
+            self._map_menu_items.append(jump_item)
             self.Bind(
                 wx.EVT_MENU,
                 lambda event, index=i: self._add_landmark(index),
@@ -1029,52 +1043,47 @@ class MapEditorFrame(wx.Frame):
                 jump_item,
             )
         clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, "清理")
-        edit_menu.AppendSubMenu(landmark_menu, "路标")
+        self._map_menu_items.append(clear_landmarks_item)
+        landmark_submenu = edit_menu.AppendSubMenu(landmark_menu, "路标")
+        self._map_menu_items.append(landmark_submenu)
         edit_menu.AppendSeparator()
-        clear_item = edit_menu.Append(wx.ID_ANY, "清除选区")
-        delete_item = edit_menu.Append(wx.ID_ANY, "清除单元格\tBackspace")
-        select_tile_item = edit_menu.Append(wx.ID_ANY, "选择瓦片\tEnter")
-        selection_start_item = edit_menu.Append(
-            wx.ID_ANY, "选区开始点\tShift+Enter"
+        clear_item = map_item(edit_menu, wx.ID_ANY, "清除选区")
+        delete_item = map_item(edit_menu, wx.ID_ANY, "清除单元格\tBackspace")
+        select_tile_item = map_item(edit_menu, wx.ID_ANY, "选择瓦片\tEnter")
+        selection_start_item = map_item(
+            edit_menu, wx.ID_ANY, "选区开始点\tShift+Enter"
         )
-        selection_end_item = edit_menu.Append(
-            wx.ID_ANY, "选区结束点\tCtrl+Enter"
+        selection_end_item = map_item(
+            edit_menu, wx.ID_ANY, "选区结束点\tCtrl+Enter"
         )
-        fill_item = edit_menu.Append(wx.ID_ANY, "填充选区\tCtrl+F")
-        generate_shape_item = edit_menu.Append(wx.ID_ANY, "生成图形...")
+        fill_item = map_item(edit_menu, wx.ID_ANY, "填充选区\tCtrl+F")
+        generate_shape_item = map_item(edit_menu, wx.ID_ANY, "生成图形...")
         edit_menu.AppendSeparator()
-        copy_item = edit_menu.Append(wx.ID_ANY, "复制\tCtrl+C")
-        cut_item = edit_menu.Append(wx.ID_ANY, "剪切\tCtrl+X")
-        paste_item = edit_menu.Append(wx.ID_ANY, "粘贴\tCtrl+V")
+        copy_item = map_item(edit_menu, wx.ID_ANY, "复制\tCtrl+C")
+        cut_item = map_item(edit_menu, wx.ID_ANY, "剪切\tCtrl+X")
+        paste_item = map_item(edit_menu, wx.ID_ANY, "粘贴\tCtrl+V")
 
         object_menu = wx.Menu()
-        add_object_item = object_menu.Append(
-            wx.ID_ANY, "添加对象...\tCtrl+Shift+A"
-        )
-        edit_object_item = object_menu.Append(wx.ID_ANY, "编辑对象...")
-        delete_object_item = object_menu.Append(
-            wx.ID_ANY, "删除对象...\tDelete"
-        )
+        add_object_items = [
+            map_item(object_menu, wx.ID_ANY, "添加对象...\tCtrl+Shift+A"),
+            map_item(object_menu, wx.ID_ANY, "编辑对象..."),
+            map_item(object_menu, wx.ID_ANY, "删除对象...\tDelete"),
+        ]
+        add_object_item, edit_object_item, delete_object_item = add_object_items
         object_menu.AppendSeparator()
-        copy_object_item = object_menu.Append(
-            wx.ID_ANY, "复制对象\tCtrl+Shift+C"
-        )
-        cut_object_item = object_menu.Append(
-            wx.ID_ANY, "剪切对象\tCtrl+Shift+X"
-        )
-        paste_object_item = object_menu.Append(
-            wx.ID_ANY, "粘贴对象\tCtrl+Shift+V"
-        )
+        copy_object_item = map_item(object_menu, wx.ID_ANY, "复制对象\tCtrl+Shift+C")
+        cut_object_item = map_item(object_menu, wx.ID_ANY, "剪切对象\tCtrl+Shift+X")
+        paste_object_item = map_item(object_menu, wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
         object_menu.AppendSeparator()
-        clear_all_objects_item = object_menu.Append(wx.ID_ANY, "清除所有对象")
+        clear_all_objects_item = map_item(object_menu, wx.ID_ANY, "清除所有对象")
         object_menu.AppendSeparator()
-        object_manager_item = object_menu.Append(
-            wx.ID_ANY, "对象管理器...\tCtrl+Shift+M"
+        object_manager_item = map_item(
+            object_menu, wx.ID_ANY, "对象管理器...\tCtrl+Shift+M"
         )
 
         collision_menu = wx.Menu()
-        toggle_collision_item = collision_menu.Append(
-            wx.ID_ANY, "标记/取消碰撞\tSpace"
+        toggle_collision_item = map_item(
+            collision_menu, wx.ID_ANY, "标记/取消碰撞\tSpace"
         )
 
         menubar.Append(file_menu, "文件 &F")
@@ -1082,6 +1091,7 @@ class MapEditorFrame(wx.Frame):
         menubar.Append(object_menu, "对象 &O")
         menubar.Append(collision_menu, "碰撞")
         self.SetMenuBar(menubar)
+        self._menubar = menubar
 
         self.Bind(wx.EVT_MENU, self.on_open, open_item)
         self.Bind(wx.EVT_MENU, self.on_import_data_source, import_data_item)
@@ -1117,6 +1127,20 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self._on_toggle_collision, toggle_collision_item)
         self.Bind(wx.EVT_CLOSE, self.on_minimize)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
+
+    def _set_map_mode(self, enabled):
+        """切换地图模式：启用/禁用地图专用菜单项与对象/碰撞顶层菜单。"""
+        if not hasattr(self, "_map_menu_items"):
+            return
+        for item in self._map_menu_items:
+            try:
+                item.Enable(enabled)
+            except Exception:
+                pass
+        if hasattr(self, "_menubar"):
+            for top in (2, 3):
+                if top < self._menubar.GetMenuCount():
+                    self._menubar.EnableTop(top, enabled)
 
     def on_undo(self, event):
         if hasattr(self, "main_book") and self.main_book.GetSelection() == 1:
@@ -1215,20 +1239,30 @@ class MapEditorFrame(wx.Frame):
                 self.on_fill_selection(None)
                 return
         elif key == wx.WXK_ESCAPE:
-            self.clear_selected(None)
+            if self.grid.HasFocus():
+                self.clear_selected(None)
+                return
+            event.Skip()
             return
         elif key == wx.WXK_DELETE:
-            _, obj = self.data_manager.find_object_at(self.cursor_x, self.cursor_y)
-            if obj:
-                self.on_delete_object(None)
+            if self.grid.HasFocus():
+                _, obj = self.data_manager.find_object_at(self.cursor_x, self.cursor_y)
+                if obj:
+                    self.on_delete_object(None)
+                return
+            event.Skip()
             return
         elif key == wx.WXK_BACK:
             if self.grid.HasFocus():
                 self.delete_selection(None)
+                return
+            event.Skip()
             return
         elif key == wx.WXK_SPACE:
             if self.grid.HasFocus():
                 self._on_toggle_collision(None)
+                return
+            event.Skip()
             return
         event.Skip()
 

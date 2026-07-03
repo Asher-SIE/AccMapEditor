@@ -228,6 +228,36 @@ class JsonBrowserPanel(wx.Panel):
             return
         self._edit_value(key)
 
+    def _blank_copy(self, value):
+        if isinstance(value, dict):
+            return {k: self._blank_copy(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return []
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, (int, float)):
+            return 0
+        if isinstance(value, str):
+            return ""
+        return None
+
+    def _pick_template(self, node):
+        """选一个同级同类型节点作为结构模板：优先当前选中，否则第一个。"""
+        if not node:
+            return None
+        sel_key = self._selected_key()
+        if sel_key is not None:
+            candidate = node.get(sel_key) if isinstance(node, dict) else (
+                node[sel_key] if isinstance(node, list) else None
+            )
+            if candidate is not None:
+                return candidate
+        if isinstance(node, dict):
+            return next(iter(node.values()))
+        if isinstance(node, list):
+            return node[-1]
+        return None
+
     def on_add(self, event):
         node = self._current_node()
         if isinstance(node, dict):
@@ -238,29 +268,47 @@ class JsonBrowserPanel(wx.Panel):
             if name in node:
                 wx.MessageBox("键名已存在", "提示", wx.OK | wx.ICON_WARNING)
                 return
-            dlg = StructuredValueDialog(self, "初始值", value="", require_name=False)
-            if dlg.ShowModal() != wx.ID_OK:
-                dlg.Destroy()
-                return
-            self.manager.push_snapshot()
-            node[name] = dlg.get_value()
-            dlg.Destroy()
-            self.filter_input.SetValue("")
-            self.refresh()
-            self._select_key(name)
-            self._notify_dirty()
-        elif isinstance(node, list):
-            dlg = StructuredValueDialog(self, "新增项", value="", require_name=False)
-            if dlg.ShowModal() == wx.ID_OK:
+            template = self._pick_template(node)
+            if template is not None:
                 self.manager.push_snapshot()
-                node.append(dlg.get_value())
-                dlg.Destroy()
+                node[name] = self._blank_copy(template)
+                self.filter_input.SetValue("")
+                self.refresh()
+                self._select_key(name)
+                self._notify_dirty()
+            else:
+                dlg = StructuredValueDialog(self, "初始值", value="", require_name=False)
+                if dlg.ShowModal() == wx.ID_OK:
+                    self.manager.push_snapshot()
+                    node[name] = dlg.get_value()
+                    dlg.Destroy()
+                    self.filter_input.SetValue("")
+                    self.refresh()
+                    self._select_key(name)
+                    self._notify_dirty()
+                else:
+                    dlg.Destroy()
+        elif isinstance(node, list):
+            template = self._pick_template(node)
+            if template is not None and isinstance(template, (dict, list)):
+                self.manager.push_snapshot()
+                node.append(self._blank_copy(template))
                 self.filter_input.SetValue("")
                 self.refresh()
                 self._select_index(len(node) - 1)
                 self._notify_dirty()
             else:
-                dlg.Destroy()
+                dlg = StructuredValueDialog(self, "新增项", value="", require_name=False)
+                if dlg.ShowModal() == wx.ID_OK:
+                    self.manager.push_snapshot()
+                    node.append(dlg.get_value())
+                    dlg.Destroy()
+                    self.filter_input.SetValue("")
+                    self.refresh()
+                    self._select_index(len(node) - 1)
+                    self._notify_dirty()
+                else:
+                    dlg.Destroy()
 
     def on_rename(self, event):
         key = self._selected_key()

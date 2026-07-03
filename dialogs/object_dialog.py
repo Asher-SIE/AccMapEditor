@@ -46,6 +46,9 @@ class StructuredValueDialog(wx.Dialog):
         self.result_name = name
         self.result_value = None
         self.object_keys = []
+        self._type_cache = {}
+        self._current_type = infer_value_type(self.value)
+        self._type_cache[self._current_type] = copy.deepcopy(self.value)
 
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -107,10 +110,32 @@ class StructuredValueDialog(wx.Dialog):
             return {}
         return ""
 
+    def _capture_current_value(self, value_type):
+        if value_type == "string":
+            if hasattr(self, "scalar_input") and self.scalar_input:
+                return self.scalar_input.GetValue()
+        elif value_type == "number":
+            if hasattr(self, "scalar_input") and self.scalar_input:
+                try:
+                    return self.parse_number(self.scalar_input.GetValue())
+                except ValueError:
+                    return self.value
+        elif value_type == "boolean":
+            if hasattr(self, "bool_input") and self.bool_input:
+                return self.bool_input.GetValue()
+        elif value_type in ("array", "object"):
+            return copy.deepcopy(self.value)
+        return self.value
+
     def on_type_changed(self, event):
-        selected_type = self.get_selected_type()
-        if infer_value_type(self.value) != selected_type:
-            self.value = self.default_value_for_type(selected_type)
+        old_type = self._current_type
+        self._type_cache[old_type] = self._capture_current_value(old_type)
+        new_type = self.get_selected_type()
+        if new_type in self._type_cache:
+            self.value = copy.deepcopy(self._type_cache[new_type])
+        else:
+            self.value = self.default_value_for_type(new_type)
+        self._current_type = new_type
         self.rebuild_value_editor()
 
     def clear_value_sizer(self):
