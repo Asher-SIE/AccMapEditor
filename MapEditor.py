@@ -980,22 +980,17 @@ class MapEditorFrame(wx.Frame):
             self.main_book.SetSelection(0)
             self.grid.SetFocus()
             return
-        if kind in (
-            "data_root",
-            "entity_file",
-            "config_file",
-            "entity",
-            "entity_group",
-            "other_root",
-        ):
-            new_path = info.get("path")
+        if kind == "data_file":
+            new_path = info.get("path", "")
             if new_path and new_path != self.data_panel.active_path():
                 if self.data_panel.is_file_modified() and not self._confirm_data_save():
                     return
             self.main_book.SetSelection(1)
-            if kind in ("entity_file", "config_file", "entity", "entity_group"):
-                self.data_panel.select(info)
+            self.data_panel.select(info)
             self.update_title()
+            return
+        if kind in ("data_root", "other_root"):
+            self.main_book.SetSelection(1)
             return
 
     def create_menu(self):
@@ -1036,7 +1031,7 @@ class MapEditorFrame(wx.Frame):
         clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, "清理")
         edit_menu.AppendSubMenu(landmark_menu, "路标")
         edit_menu.AppendSeparator()
-        clear_item = edit_menu.Append(wx.ID_ANY, "清除选区\tEsc")
+        clear_item = edit_menu.Append(wx.ID_ANY, "清除选区")
         delete_item = edit_menu.Append(wx.ID_ANY, "清除单元格\tBackspace")
         select_tile_item = edit_menu.Append(wx.ID_ANY, "选择瓦片\tEnter")
         selection_start_item = edit_menu.Append(
@@ -1159,6 +1154,31 @@ class MapEditorFrame(wx.Frame):
             event.Skip()
             return
         key = event.GetKeyCode()
+        map_active = hasattr(self, "main_book") and self.main_book.GetSelection() == 0
+
+        if key == wx.WXK_TAB:
+            if self.grid.HasFocus():
+                self.tree_panel.tree.SetFocus()
+                return
+            if self.tree_panel.tree.HasFocus() and map_active:
+                self.grid.SetFocus()
+                return
+
+        if event.ControlDown() and not event.ShiftDown():
+            if key == ord("S"):
+                self.on_save(None)
+                return
+            if key == ord("Z"):
+                self.on_undo(None)
+                return
+            if key == ord("Y"):
+                self.on_redo(None)
+                return
+
+        if not map_active:
+            event.Skip()
+            return
+
         if event.ControlDown() and event.ShiftDown():
             if key == ord("A"):
                 self.on_add_object(None)
@@ -1178,11 +1198,8 @@ class MapEditorFrame(wx.Frame):
             elif key == ord("M"):
                 self.on_open_object_manager(None)
                 return
-        if event.ControlDown():
-            if key == ord("S"):
-                self.on_save(None)
-                return
-            elif key == ord("R"):
+        elif event.ControlDown():
+            if key == ord("R"):
                 self.on_resize(None)
                 return
             elif key == ord("C"):
@@ -1197,12 +1214,9 @@ class MapEditorFrame(wx.Frame):
             elif key == ord("F"):
                 self.on_fill_selection(None)
                 return
-            elif key == ord("Z"):
-                self.on_undo(None)
-                return
-            elif key == ord("Y"):
-                self.on_redo(None)
-                return
+        elif key == wx.WXK_ESCAPE:
+            self.clear_selected(None)
+            return
         elif key == wx.WXK_DELETE:
             _, obj = self.data_manager.find_object_at(self.cursor_x, self.cursor_y)
             if obj:
