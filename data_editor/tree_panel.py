@@ -180,11 +180,20 @@ class TreePanel(wx.Panel):
         # 多根：分组；单根：直接平铺
         if len(roots) == 1:
             root_key, entities, _homo = roots[0]
+            info["default_root"] = root_key
             self._append_entities(item, file_id, root_key, entities, path)
         else:
             for root_key, entities, _homo in roots:
                 group = self.tree.AppendItem(item, f"[{root_key}] ({len(entities)})")
-                self.tree.SetItemData(group, {"kind": "entity_group"})
+                self.tree.SetItemData(
+                    group,
+                    {
+                        "kind": "entity_group",
+                        "file_id": file_id,
+                        "root_key": root_key,
+                        "path": path,
+                    },
+                )
                 self._append_entities(group, file_id, root_key, entities, path)
         event.Skip()
 

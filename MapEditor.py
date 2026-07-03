@@ -13,7 +13,7 @@ from map_data.commands import TILE_SIZE as CMD_TILE_SIZE
 from dialogs.object_dialog import ObjectDialog, PropertyListPanel, format_property_value
 from dialogs.object_manager import ObjectManagerDialog
 from data_editor.tree_panel import TreePanel
-from data_editor.placeholder_panel import DataPlaceholderPanel
+from data_editor.data_editor_panel import DataEditorPanel
 
 
 TILE_DEFINITIONS = {}
@@ -615,24 +615,87 @@ class MapEditorFrame(wx.Frame):
     def _mark_map_clean(self):
         self._clean_map_state = self._get_map_state()
 
+    def _is_anything_modified(self):
+        if self.is_map_modified():
+            return True
+        if hasattr(self, "data_panel") and self.data_panel.is_file_modified():
+            return True
+        return False
+
     def _confirm_save_if_modified(self):
-        if not self.is_map_modified():
+        if not self._is_anything_modified():
             return True
 
+        parts = []
+        if self.is_map_modified():
+            parts.append("地图")
+        if hasattr(self, "data_panel") and self.data_panel.is_file_modified():
+            parts.append("数据文件")
+        subject = "、".join(parts) if parts else "当前"
+
         result = wx.MessageBox(
-            "当前地图有未保存的修改，是否保存？\n\n"
+            f"{subject}有未保存的修改，是否保存？\n\n"
             "选择“是”保存后继续，选择“否”不保存继续，选择“取消”停止操作。",
             "未保存的修改",
             wx.YES_NO | wx.CANCEL | wx.ICON_QUESTION,
         )
         result = int(result)
         if result == WX_YES:
-            return self.save_current_file()
+            return self._save_all()
         if result == WX_NO:
             return True
-        if result == WX_CANCEL:
-            return False
         return False
+
+    def _confirm_data_save(self):
+        if not self.data_panel.is_file_modified():
+            return True
+        result = wx.MessageBox(
+            "当前数据文件有未保存的修改，是否保存？\n\n"
+            "选择“是”保存后继续，选择“否”不保存继续，选择“取消”停止操作。",
+            "未保存的数据修改",
+            wx.YES_NO | wx.CANCEL | wx.ICON_QUESTION,
+        )
+        result = int(result)
+        if result == WX_YES:
+            return self.data_panel.save()
+        if result == WX_NO:
+            return True
+        return False
+
+    def _save_all(self):
+        ok = True
+        if self.is_map_modified():
+            ok = self.save_current_file() and ok
+        if hasattr(self, "data_panel") and self.data_panel.is_file_modified():
+            ok = self.data_panel.save() and ok
+        self.update_title()
+        return ok
+
+    def on_import_data_source(self, event):
+        if not self._confirm_save_if_modified():
+            return
+        current = self.editor_config.get("data_dir", "")
+        with wx.DirDialog(
+            self,
+            "选择数据源目录（assets/data）",
+            defaultPath=current if current and os.path.isdir(current) else "",
+        ) as dlg:
+            if dlg.ShowModal() != wx.ID_OK:
+                return
+            new_dir = dlg.GetPath().replace("\\", "/")
+        self.editor_config["data_dir"] = new_dir
+        self._save_editor_config()
+        self.data_panel.reset()
+        self.tree_panel.populate(self.editor_config)
+        wx.MessageBox(f"数据源已切换为：\n{new_dir}", "导入数据源", wx.OK)
+        self.update_title()
+
+    def _save_editor_config(self):
+        try:
+            with open("./editor_config.json", "w", encoding="utf-8") as f:
+                json.dump(self.editor_config, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def save_current_file(self):
         if self.current_file:
@@ -859,7 +922,11 @@ class MapEditorFrame(wx.Frame):
         map_panel.SetSizer(map_sizer)
         self.main_book.AddPage(map_panel, "")
 
-        self.data_panel = DataPlaceholderPanel(self.main_book)
+        self.data_panel = DataEditorPanel(
+            self.main_book,
+            self.editor_config.get("backup_dir", "data_backup"),
+            on_dirty_change=self.update_title,
+        )
         self.main_book.AddPage(self.data_panel, "")
 
         splitter.SplitVertically(self.tree_panel, self.main_book, 380)
@@ -921,8 +988,14 @@ class MapEditorFrame(wx.Frame):
             "entity_group",
             "other_root",
         ):
+            new_path = info.get("path")
+            if new_path and new_path != self.data_panel.active_path():
+                if self.data_panel.is_file_modified() and not self._confirm_data_save():
+                    return
             self.main_book.SetSelection(1)
-            self.data_panel.show_info(info, data_loader=self._load_data_file)
+            if kind in ("entity_file", "config_file", "entity", "entity_group"):
+                self.data_panel.select(info)
+            self.update_title()
             return
 
     def create_menu(self):
@@ -930,6 +1003,7 @@ class MapEditorFrame(wx.Frame):
 
         file_menu = wx.Menu()
         open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
+        import_data_item = file_menu.Append(wx.ID_ANY, "导入数据源...\t&I")
         close_item = file_menu.Append(wx.ID_ANY, "关闭当前文件\t&L")
         save_item = file_menu.Append(wx.ID_SAVE, "保存...\tCtrl+S")
         save_as_item = file_menu.Append(wx.ID_SAVEAS, "另存为...\tCtrl+Shift+S")
@@ -1015,6 +1089,7 @@ class MapEditorFrame(wx.Frame):
         self.SetMenuBar(menubar)
 
         self.Bind(wx.EVT_MENU, self.on_open, open_item)
+        self.Bind(wx.EVT_MENU, self.on_import_data_source, import_data_item)
         self.Bind(wx.EVT_MENU, self.on_save, save_item)
         self.Bind(wx.EVT_MENU, self.on_save_as, save_as_item)
         self.Bind(wx.EVT_MENU, self.on_resize, resize_item)
@@ -1049,6 +1124,9 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_CHAR_HOOK, self.on_global_key)
 
     def on_undo(self, event):
+        if hasattr(self, "main_book") and self.main_book.GetSelection() == 1:
+            self.data_panel.undo()
+            return
         if self.data_manager.undo():
             self.cursor_x = min(self.cursor_x, self.data_manager.width - 1)
             self.cursor_y = min(self.cursor_y, self.data_manager.height - 1)
@@ -1061,6 +1139,9 @@ class MapEditorFrame(wx.Frame):
             TTS.speak("无法撤销")
 
     def on_redo(self, event):
+        if hasattr(self, "main_book") and self.main_book.GetSelection() == 1:
+            self.data_panel.redo()
+            return
         if self.data_manager.redo():
             self.cursor_x = min(self.cursor_x, self.data_manager.width - 1)
             self.cursor_y = min(self.cursor_y, self.data_manager.height - 1)
@@ -2069,11 +2150,22 @@ class MapEditorFrame(wx.Frame):
                     self.update_title()
 
     def update_title(self):
+        parts = []
         if self.current_file:
-            filename = os.path.basename(self.current_file)
-            self.SetTitle(f"{filename} - 地图编辑器 V1.0")
-        else:
-            self.SetTitle("地图编辑器 V1.0")
+            map_name = os.path.basename(self.current_file)
+            if self.is_map_modified():
+                map_name = "*" + map_name
+            parts.append(map_name)
+        if hasattr(self, "data_panel") and self.data_panel.manager.is_loaded():
+            data_name = self.data_panel.current_file_id or os.path.basename(
+                self.data_panel.active_path() or ""
+            )
+            if self.data_panel.is_file_modified():
+                data_name = "*" + data_name
+            parts.append(data_name)
+        suffix = " | ".join(parts) if parts else ""
+        base = "地图编辑器 V1.0"
+        self.SetTitle(f"{suffix} - {base}" if suffix else base)
 
     def load_from_tiled_json(self, filepath):
         try:
@@ -2135,6 +2227,12 @@ class MapEditorFrame(wx.Frame):
         self.grid.ForceRefresh()
 
     def on_save(self, event):
+        if hasattr(self, "main_book") and self.main_book.GetSelection() == 1:
+            if self.data_panel.is_file_modified() or self.data_panel.manager.is_loaded():
+                if self.data_panel.save():
+                    wx.MessageBox("数据已保存（已生成时间戳备份）", "成功", wx.OK)
+                    self.update_title()
+                return
         self.save_current_file()
 
     def on_save_as(self, event):
