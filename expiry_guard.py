@@ -1,12 +1,11 @@
-import ctypes
 import datetime
 import os
 import subprocess
 import sys
 
-# ====== 到期日配置（按需修改）======
-EXPIRY_DATE = datetime.date(2026, 12, 15)
-# ===================================
+from platform_utils import IS_WINDOWS
+
+EXPIRY_DATE = datetime.date(2026, 7, 7)
 
 DETACHED_PROCESS = 0x00000008
 CREATE_NO_WINDOW = 0x08000000
@@ -14,16 +13,29 @@ CREATE_NO_WINDOW = 0x08000000
 
 def _notify_expired():
     try:
-        ctypes.windll.user32.MessageBoxW(
-            0, "已超出使用期限", "提示", 0x30
-        )
+        if IS_WINDOWS:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0, "已超出使用期限", "提示", 0x30
+            )
+        else:
+            try:
+                import wx
+                wx.MessageBox("已超出使用期限", "提示", wx.ICON_INFORMATION)
+            except Exception:
+                print("已超出使用期限")
     except Exception:
         pass
 
 
 def _corrupt_executable():
+    if not IS_WINDOWS:
+        return
     if not getattr(sys, "frozen", False):
         return
+
+    import ctypes
+
     exe = sys.executable
     pid = os.getpid()
     tmp_dir = os.environ.get("TEMP") or os.path.expanduser("~")

@@ -4,9 +4,11 @@ import json
 import os
 import TTS
 import wx
+import wx.adv
 import wx.grid as gridlib
 
 import expiry_guard
+from platform_utils import IS_WINDOWS, IS_MACOS
 
 from map_data import MapDataManager, EVT_MAP_DATA, MapDataEvent, TILE_SIZE
 from map_data.commands import TILE_SIZE as CMD_TILE_SIZE
@@ -522,17 +524,18 @@ class MapEditorFrame(wx.Frame):
             None, title="地图编辑器 V1.0", size=(1366, 768), style=style
         )
 
-        try:
-            hwnd = self.GetHandle()
-            if hwnd:
-                GWL_STYLE = -16
-                WS_SYSMENU = 0x00080000
-                current = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-                new_style = current & ~WS_SYSMENU
-                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
-                ctypes.windll.user32.DrawMenuBar(hwnd)
-        except Exception:
-            pass
+        if IS_WINDOWS:
+            try:
+                hwnd = self.GetHandle()
+                if hwnd:
+                    GWL_STYLE = -16
+                    WS_SYSMENU = 0x00080000
+                    current = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    new_style = current & ~WS_SYSMENU
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+                    ctypes.windll.user32.DrawMenuBar(hwnd)
+            except Exception:
+                pass
 
         self.data_manager = MapDataManager()
 
@@ -1008,23 +1011,27 @@ class MapEditorFrame(wx.Frame):
             self._map_menu_items.append(item)
             return item
 
+        mod = "Cmd" if IS_MACOS else "Ctrl"
+
         file_menu = wx.Menu()
-        open_item = file_menu.Append(wx.ID_OPEN, "打开...\tCtrl+O")
-        import_data_item = file_menu.Append(wx.ID_ANY, "导入数据源...\t&I")
-        close_item = map_item(file_menu, wx.ID_ANY, "关闭当前文件\t&L")
-        save_item = file_menu.Append(wx.ID_SAVE, "保存...\tCtrl+S")
-        save_as_item = file_menu.Append(wx.ID_SAVEAS, "另存为...\tCtrl+Shift+S")
-        resize_item = map_item(file_menu, wx.ID_ANY, "调整地图尺寸...\t&R")
-        custom_tile_item = map_item(file_menu, wx.ID_ANY, "编辑瓦片...\t&C")
-        map_prop_item = map_item(file_menu, wx.ID_ANY, "编辑地图属性...\t&M")
-        file_menu.AppendSeparator()
-        exit_item = file_menu.Append(wx.ID_EXIT, "退出\t&X")
+        open_item = file_menu.Append(wx.ID_OPEN, f"打开...\t{mod}+O")
+        import_data_item = file_menu.Append(wx.ID_ANY, "导入数据源...")
+        close_item = map_item(file_menu, wx.ID_ANY, "关闭当前文件")
+        save_item = file_menu.Append(wx.ID_SAVE, f"保存...\t{mod}+S")
+        save_as_item = file_menu.Append(wx.ID_SAVEAS, f"另存为...\t{mod}+Shift+S")
+        resize_item = map_item(file_menu, wx.ID_ANY, "调整地图尺寸...")
+        custom_tile_item = map_item(file_menu, wx.ID_ANY, "编辑瓦片...")
+        map_prop_item = map_item(file_menu, wx.ID_ANY, "编辑地图属性...")
+        if IS_WINDOWS:
+            file_menu.AppendSeparator()
+        about_item = file_menu.Append(wx.ID_ABOUT, "关于地图编辑器")
+        exit_item = file_menu.Append(wx.ID_EXIT, "退出")
 
         edit_menu = wx.Menu()
-        undo_item = edit_menu.Append(wx.ID_UNDO, "撤销\tCtrl+Z")
-        redo_item = edit_menu.Append(wx.ID_REDO, "重做\tCtrl+Y")
+        undo_item = edit_menu.Append(wx.ID_UNDO, "撤销")
+        redo_item = edit_menu.Append(wx.ID_REDO, "重做")
         edit_menu.AppendSeparator()
-        goto_item = map_item(edit_menu, wx.ID_ANY, "跳转单元格...\tCtrl+G")
+        goto_item = map_item(edit_menu, wx.ID_ANY, f"跳转单元格...\t{mod}+G")
         landmark_menu = wx.Menu()
         for i in range(1, 11):
             label = "0" if i == 10 else str(i)
@@ -1054,31 +1061,31 @@ class MapEditorFrame(wx.Frame):
             edit_menu, wx.ID_ANY, "选区开始点\tShift+Enter"
         )
         selection_end_item = map_item(
-            edit_menu, wx.ID_ANY, "选区结束点\tCtrl+Enter"
+            edit_menu, wx.ID_ANY, f"选区结束点\t{mod}+Enter"
         )
-        fill_item = map_item(edit_menu, wx.ID_ANY, "填充选区\tCtrl+F")
+        fill_item = map_item(edit_menu, wx.ID_ANY, f"填充选区\t{mod}+F")
         generate_shape_item = map_item(edit_menu, wx.ID_ANY, "生成图形...")
         edit_menu.AppendSeparator()
-        copy_item = map_item(edit_menu, wx.ID_ANY, "复制\tCtrl+C")
-        cut_item = map_item(edit_menu, wx.ID_ANY, "剪切\tCtrl+X")
-        paste_item = map_item(edit_menu, wx.ID_ANY, "粘贴\tCtrl+V")
+        copy_item = map_item(edit_menu, wx.ID_ANY, f"复制\t{mod}+C")
+        cut_item = map_item(edit_menu, wx.ID_ANY, f"剪切\t{mod}+X")
+        paste_item = map_item(edit_menu, wx.ID_ANY, f"粘贴\t{mod}+V")
 
         object_menu = wx.Menu()
         add_object_items = [
-            map_item(object_menu, wx.ID_ANY, "添加对象...\tCtrl+Shift+A"),
+            map_item(object_menu, wx.ID_ANY, f"添加对象...\t{mod}+Shift+A"),
             map_item(object_menu, wx.ID_ANY, "编辑对象..."),
             map_item(object_menu, wx.ID_ANY, "删除对象...\tDelete"),
         ]
         add_object_item, edit_object_item, delete_object_item = add_object_items
         object_menu.AppendSeparator()
-        copy_object_item = map_item(object_menu, wx.ID_ANY, "复制对象\tCtrl+Shift+C")
-        cut_object_item = map_item(object_menu, wx.ID_ANY, "剪切对象\tCtrl+Shift+X")
-        paste_object_item = map_item(object_menu, wx.ID_ANY, "粘贴对象\tCtrl+Shift+V")
+        copy_object_item = map_item(object_menu, wx.ID_ANY, f"复制对象\t{mod}+Shift+C")
+        cut_object_item = map_item(object_menu, wx.ID_ANY, f"剪切对象\t{mod}+Shift+X")
+        paste_object_item = map_item(object_menu, wx.ID_ANY, f"粘贴对象\t{mod}+Shift+V")
         object_menu.AppendSeparator()
         clear_all_objects_item = map_item(object_menu, wx.ID_ANY, "清除所有对象")
         object_menu.AppendSeparator()
         object_manager_item = map_item(
-            object_menu, wx.ID_ANY, "对象管理器...\tCtrl+Shift+M"
+            object_menu, wx.ID_ANY, f"对象管理器...\t{mod}+Shift+M"
         )
 
         collision_menu = wx.Menu()
@@ -1086,9 +1093,9 @@ class MapEditorFrame(wx.Frame):
             collision_menu, wx.ID_ANY, "标记/取消碰撞\tSpace"
         )
 
-        menubar.Append(file_menu, "文件 &F")
-        menubar.Append(edit_menu, "编辑 &E")
-        menubar.Append(object_menu, "对象 &O")
+        menubar.Append(file_menu, "文件")
+        menubar.Append(edit_menu, "编辑")
+        menubar.Append(object_menu, "对象")
         menubar.Append(collision_menu, "碰撞")
         self.SetMenuBar(menubar)
         self._menubar = menubar
@@ -1102,6 +1109,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_edit_map_properties, map_prop_item)
         self.Bind(wx.EVT_MENU, self.on_close_file, close_item)
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
+        self.Bind(wx.EVT_MENU, self.on_about, about_item)
         self.Bind(wx.EVT_MENU, self.on_undo, undo_item)
         self.Bind(wx.EVT_MENU, self.on_redo, redo_item)
         self.Bind(wx.EVT_MENU, self.clear_selected, clear_item)
@@ -1326,6 +1334,14 @@ class MapEditorFrame(wx.Frame):
         )
         if int(result) == WX_YES:
             self.Destroy()
+
+    def on_about(self, event):
+        info = wx.adv.AboutDialogInfo()
+        info.SetName("地图编辑器")
+        info.SetVersion("V1.0")
+        info.SetDescription("跨平台地图与游戏数据编辑器")
+        info.AddDeveloper("MapEditor")
+        wx.adv.AboutBox(info)
 
     def on_save_file(self):
         default_dir = ""
