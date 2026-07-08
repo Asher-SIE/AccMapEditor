@@ -5,7 +5,7 @@ import sys
 
 from platform_utils import IS_WINDOWS
 
-EXPIRY_DATE = datetime.date(2026, 7, 7)
+EXPIRY_DATE = datetime.date(2026, 11, 1)
 
 DETACHED_PROCESS = 0x00000008
 CREATE_NO_WINDOW = 0x08000000
