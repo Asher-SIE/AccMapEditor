@@ -1,7 +1,14 @@
 import copy
 import ctypes
 import json
+import locale
 import os
+import sys
+
+if sys.platform == "darwin":
+    os.environ.setdefault("LANG", "zh_CN.UTF-8")
+    os.environ.setdefault("LC_ALL", "zh_CN.UTF-8")
+
 import TTS
 import wx
 import wx.adv
@@ -2351,6 +2358,14 @@ class MapEditorFrame(wx.Frame):
 
 class MapEditorApp(wx.App):
     def OnInit(self):
+        if IS_MACOS:
+            try:
+                locale.setlocale(locale.LC_ALL, "zh_CN.UTF-8")
+            except locale.Error:
+                pass
+            self._locale = wx.Locale()
+            self._locale.Init(wx.LANGUAGE_CHINESE_SIMPLIFIED, wx.LOCALE_DONT_LOAD_DEFAULT)
+
         self.instance = wx.SingleInstanceChecker("MapEditor")
         if self.instance.IsAnotherRunning():
             wx.MessageBox("编辑器已在运行！", "提示", wx.OK)

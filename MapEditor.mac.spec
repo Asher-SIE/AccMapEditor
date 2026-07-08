@@ -45,6 +45,8 @@ app = BUNDLE(
         'CFBundleName': 'MapEditor',
         'CFBundleDisplayName': '地图编辑器',
         'CFBundleShortVersionString': '1.0',
+        'CFBundleDevelopmentRegion': 'zh_CN',
+        'CFBundleLocalizations': ['zh_CN'],
         'NSHighResolutionCapable': True,
     },
 )
