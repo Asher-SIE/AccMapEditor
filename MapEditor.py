@@ -1022,17 +1022,39 @@ class MapEditorFrame(wx.Frame):
 
         file_menu = wx.Menu()
         open_item = file_menu.Append(wx.ID_OPEN, f"打开...\t{mod}+O")
-        import_data_item = file_menu.Append(wx.ID_ANY, "导入数据源...")
-        close_item = map_item(file_menu, wx.ID_ANY, "关闭当前文件")
+        import_data_item = file_menu.Append(
+            wx.ID_ANY,
+            "导入数据源...\t&I" if IS_WINDOWS else "导入数据源...",
+        )
+        close_item = map_item(
+            file_menu,
+            wx.ID_ANY,
+            "关闭当前文件\t&L" if IS_WINDOWS else "关闭当前文件",
+        )
         save_item = file_menu.Append(wx.ID_SAVE, f"保存...\t{mod}+S")
         save_as_item = file_menu.Append(wx.ID_SAVEAS, f"另存为...\t{mod}+Shift+S")
-        resize_item = map_item(file_menu, wx.ID_ANY, "调整地图尺寸...")
-        custom_tile_item = map_item(file_menu, wx.ID_ANY, "编辑瓦片...")
-        map_prop_item = map_item(file_menu, wx.ID_ANY, "编辑地图属性...")
+        resize_item = map_item(
+            file_menu,
+            wx.ID_ANY,
+            "调整地图尺寸...\t&R" if IS_WINDOWS else "调整地图尺寸...",
+        )
+        custom_tile_item = map_item(
+            file_menu,
+            wx.ID_ANY,
+            "编辑瓦片...\t&C" if IS_WINDOWS else "编辑瓦片...",
+        )
+        map_prop_item = map_item(
+            file_menu,
+            wx.ID_ANY,
+            "编辑地图属性...\t&M" if IS_WINDOWS else "编辑地图属性...",
+        )
         if IS_WINDOWS:
             file_menu.AppendSeparator()
         about_item = file_menu.Append(wx.ID_ABOUT, "关于地图编辑器")
-        exit_item = file_menu.Append(wx.ID_EXIT, "退出")
+        exit_item = file_menu.Append(
+            wx.ID_EXIT,
+            "退出\t&X" if IS_WINDOWS else "退出",
+        )
 
         edit_menu = wx.Menu()
         undo_item = edit_menu.Append(wx.ID_UNDO, "撤销")
@@ -1100,9 +1122,9 @@ class MapEditorFrame(wx.Frame):
             collision_menu, wx.ID_ANY, "标记/取消碰撞\tSpace"
         )
 
-        menubar.Append(file_menu, "文件")
-        menubar.Append(edit_menu, "编辑")
-        menubar.Append(object_menu, "对象")
+        menubar.Append(file_menu, "文件 &F" if IS_WINDOWS else "文件")
+        menubar.Append(edit_menu, "编辑 &E" if IS_WINDOWS else "编辑")
+        menubar.Append(object_menu, "对象 &O" if IS_WINDOWS else "对象")
         menubar.Append(collision_menu, "碰撞")
         self.SetMenuBar(menubar)
         self._menubar = menubar
