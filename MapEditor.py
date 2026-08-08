@@ -1057,8 +1057,8 @@ class MapEditorFrame(wx.Frame):
         )
 
         edit_menu = wx.Menu()
-        undo_item = edit_menu.Append(wx.ID_UNDO, "撤销")
-        redo_item = edit_menu.Append(wx.ID_REDO, "重做")
+        undo_item = edit_menu.Append(wx.ID_UNDO, f"撤销\t{mod}+Z")
+        redo_item = edit_menu.Append(wx.ID_REDO, f"重做\t{mod}+Y")
         edit_menu.AppendSeparator()
         goto_item = map_item(edit_menu, wx.ID_ANY, f"跳转单元格...\t{mod}+G")
         landmark_menu = wx.Menu()
