@@ -435,6 +435,7 @@ class ObjectDialog(wx.Dialog):
         default_tile_x=0,
         default_tile_y=0,
         object_definitions=None,
+        data_manager=None,
     ):
         title = "编辑对象" if is_edit else "添加对象"
         super().__init__(parent, title=title)
@@ -443,6 +444,7 @@ class ObjectDialog(wx.Dialog):
         self.is_edit = is_edit
         self.next_id = next_id
         self.object_definitions = object_definitions or {}
+        self.data_manager = data_manager
 
         if obj_data and obj_data.get("x") is not None:
             default_tile_x = int(obj_data.get("x", 0)) // self.TILE_SIZE
@@ -481,8 +483,6 @@ class ObjectDialog(wx.Dialog):
             min=1,
             max=999999,
         )
-        if not is_edit:
-            self.id_input.Disable()
         info_sizer.Add(self.id_input, 1, wx.EXPAND)
 
         info_sizer.Add(wx.StaticText(self, label="对象名称："))
@@ -579,6 +579,17 @@ class ObjectDialog(wx.Dialog):
                 ctrl.SetValue(int(ctrl.GetValue()))
             except (ValueError, TypeError):
                 pass
+        if self.data_manager is not None:
+            new_id = self.id_input.GetValue()
+            existing = self.data_manager.find_object_by_id(new_id)
+            if existing is not None and existing is not self.obj_data:
+                wx.MessageBox(
+                    f"对象ID {new_id} 已存在！",
+                    "提示",
+                    wx.OK | wx.ICON_WARNING,
+                )
+                self.id_input.SetFocus()
+                return False
         return True
 
     def get_object_data(self):

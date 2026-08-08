@@ -1198,7 +1198,7 @@ class MapEditorFrame(wx.Frame):
         menubar.Append(file_menu, "文件 &F" if IS_WINDOWS else "文件")
         menubar.Append(edit_menu, "编辑 &E" if IS_WINDOWS else "编辑")
         menubar.Append(object_menu, "对象 &O" if IS_WINDOWS else "对象")
-        menubar.Append(collision_menu, "碰撞")
+        menubar.Append(collision_menu, "碰撞 &C" if IS_WINDOWS else "碰撞")
         self.SetMenuBar(menubar)
         self._menubar = menubar
 
@@ -2246,6 +2246,7 @@ class MapEditorFrame(wx.Frame):
         new_obj = copy.deepcopy(self.object_clipboard)
         new_obj["x"] = self.cursor_x * TILE_SIZE
         new_obj["y"] = self.cursor_y * TILE_SIZE
+        new_obj.pop("id", None)
         self.data_manager.add_object(new_obj)
         self._upsert_object_template(new_obj)
         TTS.cancel()
@@ -2259,6 +2260,7 @@ class MapEditorFrame(wx.Frame):
             default_tile_x=self.cursor_x,
             default_tile_y=self.cursor_y,
             object_definitions=self.object_definitions,
+            data_manager=self.data_manager,
         )
         if dlg.ShowModal() == wx.ID_OK:
             obj_data = dlg.get_object_data()
@@ -2285,20 +2287,14 @@ class MapEditorFrame(wx.Frame):
             is_edit=True,
             next_id=self.data_manager.next_object_id,
             object_definitions=self.object_definitions,
+            data_manager=self.data_manager,
         )
         if dlg.ShowModal() == wx.ID_OK:
             new_obj_data = dlg.get_object_data()
             if self.data_manager.modify_object(obj.get("id"), new_obj_data):
                 self._upsert_object_template(new_obj_data)
-                del self._silent_status
-                TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
-            else:
-                del self._silent_status
-                wx.MessageBox(
-                    f"对象ID {new_obj_data.get('id')} 已存在！",
-                    "提示",
-                    wx.OK | wx.ICON_WARNING,
-                )
+            del self._silent_status
+            TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
         else:
             del self._silent_status
         dlg.Destroy()

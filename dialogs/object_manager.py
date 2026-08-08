@@ -150,6 +150,7 @@ class ObjectManagerDialog(wx.Frame):
                 is_edit=True,
                 next_id=self.data_manager.next_object_id,
                 object_definitions=self.parent.object_definitions,
+                data_manager=self.data_manager,
             )
             if dlg.ShowModal() == wx.ID_OK:
                 new_data = dlg.get_object_data()
@@ -157,12 +158,6 @@ class ObjectManagerDialog(wx.Frame):
                     self.parent._upsert_object_template(new_data)
                     TTS.cancel()
                     TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
-                else:
-                    wx.MessageBox(
-                        f"对象ID {new_data.get('id')} 已存在！",
-                        "提示",
-                        wx.OK | wx.ICON_WARNING,
-                    )
             dlg.Destroy()
         finally:
             self._editing = False

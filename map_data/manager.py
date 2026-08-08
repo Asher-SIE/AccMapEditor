@@ -199,9 +199,12 @@ class MapDataManager(wx.EvtHandler):
         self.execute(BulkSetTilesCommand(changes))
 
     def add_object(self, obj_data):
-        obj_data["id"] = self.next_object_id
-        self.next_object_id += 1
+        obj_id = obj_data.get("id", self.next_object_id)
+        if self.find_object_by_id(obj_id) is not None:
+            return False
+        obj_data["id"] = obj_id
         self.execute(AddObjectCommand(0, obj_data))
+        return True
 
     def remove_object(self, obj_id):
         obj = self.find_object_by_id(obj_id)
