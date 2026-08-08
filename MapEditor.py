@@ -1137,7 +1137,7 @@ class MapEditorFrame(wx.Frame):
         landmark_menu = wx.Menu()
         for i in range(1, 11):
             label = "0" if i == 10 else str(i)
-            mark_item = landmark_menu.Append(wx.ID_ANY, f"标记{label}")
+            mark_item = landmark_menu.Append(wx.ID_ANY, f"标记{label}\t{mod}+{label}")
             jump_item = landmark_menu.Append(wx.ID_ANY, f"跳转到{label}")
             self._map_menu_items.append(mark_item)
             self._map_menu_items.append(jump_item)
@@ -1151,7 +1151,7 @@ class MapEditorFrame(wx.Frame):
                 lambda event, index=i: self._jump_to_landmark(index),
                 jump_item,
             )
-        clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, "清理")
+        clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, f"清理\t{mod}+`")
         self._map_menu_items.append(clear_landmarks_item)
         landmark_submenu = edit_menu.AppendSubMenu(landmark_menu, "路标")
         self._map_menu_items.append(landmark_submenu)
@@ -1312,6 +1312,19 @@ class MapEditorFrame(wx.Frame):
         if not map_active:
             event.Skip()
             return
+
+        if self.grid.HasFocus():
+            if event.ControlDown() and not event.AltDown() and key in (ord("`"), ord("~")):
+                self._clear_landmarks()
+                return
+            landmark_index = self._route_key_index(key)
+            if landmark_index is not None:
+                if event.ControlDown() and not event.ShiftDown():
+                    self._add_landmark(landmark_index)
+                    return
+                if event.GetModifiers() == wx.MOD_NONE:
+                    self._jump_to_landmark(landmark_index)
+                    return
 
         if event.ControlDown() and event.ShiftDown():
             if key == ord("A"):
