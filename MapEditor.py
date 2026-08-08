@@ -275,17 +275,24 @@ class ShapeGenerationDialog(wx.Dialog):
 
         shape_sizer = wx.BoxSizer(wx.HORIZONTAL)
         shape_sizer.Add(wx.StaticText(self, label="图形:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        self.shape_choice = wx.Choice(self, choices=["矩形", "椭圆", "菱形", "三角形", "路标多边形"])
+        self.shape_choice = wx.Choice(self, choices=["矩形", "椭圆", "菱形", "等腰三角形", "直角三角形", "路标多边形"])
         self.shape_choice.SetSelection(0)
         shape_sizer.Add(self.shape_choice, 1)
         sizer.Add(shape_sizer, 0, wx.EXPAND | wx.ALL, 5)
 
+        right_angle_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        right_angle_sizer.Add(wx.StaticText(self, label="直角位置:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.right_angle_choice = wx.Choice(self, choices=["左下", "左上", "右下", "右上"])
+        self.right_angle_choice.SetSelection(0)
+        right_angle_sizer.Add(self.right_angle_choice, 1)
+        sizer.Add(right_angle_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
         size_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        size_sizer.Add(wx.StaticText(self, label="长:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        self.width_ctrl = wx.SpinCtrl(self, value="5", min=1, max=1000)
+        size_sizer.Add(wx.StaticText(self, label="宽度:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.width_ctrl = wx.SpinCtrl(self, value="5", min=0, max=1000)
         size_sizer.Add(self.width_ctrl, 0, wx.RIGHT, 10)
-        size_sizer.Add(wx.StaticText(self, label="宽:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        self.height_ctrl = wx.SpinCtrl(self, value="5", min=1, max=1000)
+        size_sizer.Add(wx.StaticText(self, label="高度:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        self.height_ctrl = wx.SpinCtrl(self, value="5", min=0, max=1000)
         size_sizer.Add(self.height_ctrl, 0)
         sizer.Add(size_sizer, 0, wx.ALL, 5)
 
@@ -313,11 +320,21 @@ class ShapeGenerationDialog(wx.Dialog):
         self.Fit()
         self.mode_choice.Bind(wx.EVT_CHOICE, self.on_mode_changed)
         self.on_mode_changed(None)
+        self.shape_choice.Bind(wx.EVT_CHOICE, self.on_shape_changed)
+        self.on_shape_changed(None)
 
     def on_mode_changed(self, event):
         is_border = self.mode_choice.GetStringSelection() == "边框"
         self.thickness_ctrl.Enable(is_border)
         self.border_direction_choice.Enable(is_border)
+
+    def on_shape_changed(self, event):
+        shape = self.shape_choice.GetStringSelection()
+        is_right_triangle = shape == "直角三角形"
+        is_landmark = shape == "路标多边形"
+        self.right_angle_choice.Enable(is_right_triangle)
+        self.width_ctrl.Enable(not is_landmark)
+        self.height_ctrl.Enable(not is_landmark)
 
     def get_config(self):
         return {
@@ -325,6 +342,7 @@ class ShapeGenerationDialog(wx.Dialog):
             "y": self.y_ctrl.GetValue(),
             "anchor": self.anchor_choice.GetStringSelection(),
             "shape": self.shape_choice.GetStringSelection(),
+            "right_angle": self.right_angle_choice.GetStringSelection(),
             "width": self.width_ctrl.GetValue(),
             "height": self.height_ctrl.GetValue(),
             "mode": self.mode_choice.GetStringSelection(),
@@ -1961,8 +1979,21 @@ class MapEditorFrame(wx.Frame):
                     inside = not inside
         return inside
 
+    def _fill_polygon_raw(self, points):
+        if len(points) < 3 or len(set(points)) < 3 or self._polygon_area2(points) == 0:
+            return []
+        left = min(x for x, _ in points)
+        right = max(x for x, _ in points)
+        top = min(y for _, y in points)
+        bottom = max(y for _, y in points)
+        cells = []
+        for y in range(top, bottom + 1):
+            for x in range(left, right + 1):
+                if self._point_in_polygon((x, y), points):
+                    cells.append((x, y))
+        return cells
+
     def _get_polygon_fill_cells(self, points):
-        dm = self.data_manager
         if len(points) < 3:
             return None
         if len(set(points)) < 3 or self._polygon_area2(points) == 0:
@@ -1973,17 +2004,12 @@ class MapEditorFrame(wx.Frame):
             TTS.cancel()
             TTS.speak("路标图形交叉，无法填充")
             return []
-
-        left = min(x for x, _ in points)
-        right = max(x for x, _ in points)
-        top = min(y for _, y in points)
-        bottom = max(y for _, y in points)
-        cells = []
-        for y in range(top, bottom + 1):
-            for x in range(left, right + 1):
-                if 0 <= x < dm.width and 0 <= y < dm.height and self._point_in_polygon((x, y), points):
-                    cells.append((x, y))
-        return cells
+        dm = self.data_manager
+        return [
+            (x, y)
+            for x, y in self._fill_polygon_raw(points)
+            if 0 <= x < dm.width and 0 <= y < dm.height
+        ]
 
     def _get_landmark_polygon_fill_cells(self):
         points = self._get_landmark_polygon_points()
@@ -1991,36 +2017,34 @@ class MapEditorFrame(wx.Frame):
             return None
         return self._get_polygon_fill_cells(points)
 
-    def _shape_left_top(self, x, y, width, height, anchor):
-        if anchor == "中心点":
-            return x - width // 2, y - height // 2
-        return x, y
+    def _shape_geometry(self, config):
+        x, y = config["x"], config["y"]
+        w, h = config["width"], config["height"]
+        if config["anchor"] == "中心点":
+            return x - w, y - h, 2 * w + 1, 2 * h + 1
+        return x, y, w, h
 
-    def _get_shape_solid_cells(self, shape, left, top, width, height):
-        if width <= 0 or height <= 0:
+    def _get_shape_solid_cells(self, shape, left, top, span_w, span_h, anchor, right_angle):
+        if span_w <= 0 or span_h <= 0:
             return set()
 
         if shape == "路标多边形":
-            cells = self._get_landmark_polygon_fill_cells()
-            return set(cells or [])
+            return set(self._get_landmark_polygon_fill_cells() or [])
 
-        if shape == "三角形":
-            points = [
-                (left + width // 2, top),
-                (left, top + height - 1),
-                (left + width - 1, top + height - 1),
-            ]
-            cells = self._get_polygon_fill_cells(points)
-            return set(cells or [])
+        if shape == "等腰三角形":
+            return self._isosceles_triangle_cells(left, top, span_w, span_h, anchor)
+
+        if shape == "直角三角形":
+            return self._right_triangle_cells(left, top, span_w, span_h, anchor, right_angle)
 
         cells = set()
-        center_x = (width - 1) / 2
-        center_y = (height - 1) / 2
+        center_x = (span_w - 1) / 2
+        center_y = (span_h - 1) / 2
         radius_x = max(center_x, 0.5)
         radius_y = max(center_y, 0.5)
 
-        for y in range(top, top + height):
-            for x in range(left, left + width):
+        for y in range(top, top + span_h):
+            for x in range(left, left + span_w):
                 rel_x = x - left
                 rel_y = y - top
                 if shape == "矩形":
@@ -2035,6 +2059,47 @@ class MapEditorFrame(wx.Frame):
                     dy = abs(rel_y - center_y) / radius_y
                     if dx + dy <= 1:
                         cells.add((x, y))
+        return cells
+
+    def _isosceles_triangle_cells(self, left, top, span_w, span_h, anchor):
+        if span_w < 2 or span_h < 2:
+            return {(left + span_w // 2, top + span_h // 2)}
+        apex = (left + span_w // 2, top)
+        bl = (left, top + span_h - 1)
+        br = (left + span_w - 1, top + span_h - 1)
+        cells = set(self._fill_polygon_raw([apex, bl, br]))
+        if anchor == "中心点" and cells:
+            ry = (span_h - 1) / 2
+            shift = round(-ry / 3)
+            if shift:
+                cells = {(x, y + shift) for x, y in cells}
+        return cells
+
+    def _right_triangle_cells(self, left, top, span_w, span_h, anchor, corner):
+        if span_w < 2 or span_h < 2:
+            return {(left + span_w // 2, top + span_h // 2)}
+        tl = (left, top)
+        tr = (left + span_w - 1, top)
+        bl = (left, top + span_h - 1)
+        br = (left + span_w - 1, top + span_h - 1)
+        verts = {
+            "左下": [tl, bl, br],
+            "左上": [tl, tr, bl],
+            "右下": [tr, bl, br],
+            "右上": [tl, tr, br],
+        }.get(corner, [tl, bl, br])
+        cells = set(self._fill_polygon_raw(verts))
+        if anchor == "中心点" and cells:
+            rx = (span_w - 1) / 2
+            ry = (span_h - 1) / 2
+            sx, sy = {
+                "左下": (round(rx / 3), round(-ry / 3)),
+                "左上": (round(rx / 3), round(ry / 3)),
+                "右下": (round(-rx / 3), round(-ry / 3)),
+                "右上": (round(-rx / 3), round(ry / 3)),
+            }.get(corner, (0, 0))
+            if sx or sy:
+                cells = {(x + sx, y + sy) for x, y in cells}
         return cells
 
     def _erode_cells(self, cells, steps):
@@ -2070,15 +2135,10 @@ class MapEditorFrame(wx.Frame):
         return current
 
     def _get_shape_cells(self, config):
-        left, top = self._shape_left_top(
-            config["x"],
-            config["y"],
-            config["width"],
-            config["height"],
-            config["anchor"],
-        )
+        left, top, span_w, span_h = self._shape_geometry(config)
         solid_cells = self._get_shape_solid_cells(
-            config["shape"], left, top, config["width"], config["height"]
+            config["shape"], left, top, span_w, span_h,
+            config["anchor"], config.get("right_angle", "左下"),
         )
 
         if config["mode"] == "边框":
@@ -2191,7 +2251,7 @@ class MapEditorFrame(wx.Frame):
                 self._clear_selection()
                 width, height = self._shape_feedback_size(config, cells)
                 TTS.cancel()
-                TTS.speak(f"生成{config['shape']}，长{width}宽{height}")
+                TTS.speak(f"生成{config['shape']}，宽{width}高{height}")
             else:
                 TTS.cancel()
                 TTS.speak("没有可生成的图形")
