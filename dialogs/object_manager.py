@@ -70,7 +70,11 @@ class ObjectManagerDialog(wx.Frame):
 
     def populate_list(self):
         self.obj_list.DeleteAllItems()
-        for obj in self.data_manager.get_active_objects():
+        objects = sorted(
+            self.data_manager.get_active_objects(),
+            key=lambda o: o.get("id", 0),
+        )
+        for obj in objects:
             tile_x = obj.get("x", 0) // self.TILE_SIZE
             tile_y = obj.get("y", 0) // self.TILE_SIZE
             idx = self.obj_list.InsertItem(
