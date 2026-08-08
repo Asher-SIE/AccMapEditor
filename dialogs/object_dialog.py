@@ -434,6 +434,7 @@ class ObjectDialog(wx.Dialog):
         next_id=1,
         default_tile_x=0,
         default_tile_y=0,
+        object_definitions=None,
     ):
         title = "编辑对象" if is_edit else "添加对象"
         super().__init__(parent, title=title)
@@ -441,12 +442,35 @@ class ObjectDialog(wx.Dialog):
         self.obj_data = obj_data if obj_data else {}
         self.is_edit = is_edit
         self.next_id = next_id
+        self.object_definitions = object_definitions or {}
 
         if obj_data and obj_data.get("x") is not None:
             default_tile_x = int(obj_data.get("x", 0)) // self.TILE_SIZE
             default_tile_y = int(obj_data.get("y", 0)) // self.TILE_SIZE
 
         sizer = wx.BoxSizer(wx.VERTICAL)
+
+        tmpl_names = sorted(
+            name for name, tmpl in self.object_definitions.items()
+            if isinstance(tmpl, dict)
+        )
+        if tmpl_names:
+            tmpl_sizer = wx.BoxSizer(wx.HORIZONTAL)
+            tmpl_sizer.Add(
+                wx.StaticText(self, label="导入模板："),
+                0,
+                wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+                5,
+            )
+            self.tmpl_choice = wx.Choice(
+                self, choices=["（不导入）"] + tmpl_names
+            )
+            self.tmpl_choice.SetSelection(0)
+            tmpl_sizer.Add(self.tmpl_choice, 1, wx.EXPAND)
+            sizer.Add(tmpl_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
+            self.tmpl_choice.Bind(wx.EVT_CHOICE, self.on_import_template)
+        else:
+            self.tmpl_choice = None
 
         info_sizer = wx.FlexGridSizer(rows=7, cols=2, hgap=5, vgap=5)
 
@@ -516,7 +540,33 @@ class ObjectDialog(wx.Dialog):
         sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
         self.SetSizer(sizer)
-        self.SetSize((400, 450))
+        self.SetSize((400, 490))
+
+    def on_import_template(self, event):
+        if not self.tmpl_choice:
+            return
+        sel = self.tmpl_choice.GetSelection()
+        if sel <= 0:
+            return
+        names = sorted(
+            name for name, tmpl in self.object_definitions.items()
+            if isinstance(tmpl, dict)
+        )
+        idx = sel - 1
+        if idx < 0 or idx >= len(names):
+            return
+        tmpl = self.object_definitions[names[idx]]
+        self.name_input.SetValue(str(tmpl.get("name", "")))
+        self.type_input.SetValue(str(tmpl.get("type", "")))
+        try:
+            self.tile_w_input.SetValue(int(tmpl.get("width", self.TILE_SIZE)) // self.TILE_SIZE)
+        except (ValueError, TypeError):
+            self.tile_w_input.SetValue(1)
+        try:
+            self.tile_h_input.SetValue(int(tmpl.get("height", self.TILE_SIZE)) // self.TILE_SIZE)
+        except (ValueError, TypeError):
+            self.tile_h_input.SetValue(1)
+        self.prop_panel.set_properties(copy.deepcopy(tmpl.get("properties", {})))
 
     def Validate(self):
         for ctrl in (

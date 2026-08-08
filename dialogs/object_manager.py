@@ -145,11 +145,16 @@ class ObjectManagerDialog(wx.Frame):
         try:
             obj_id = obj.get("id")
             dlg = ObjectDialog(
-                self, obj_data=obj, is_edit=True, next_id=self.data_manager.next_object_id
+                self,
+                obj_data=obj,
+                is_edit=True,
+                next_id=self.data_manager.next_object_id,
+                object_definitions=self.parent.object_definitions,
             )
             if dlg.ShowModal() == wx.ID_OK:
                 new_data = dlg.get_object_data()
                 if self.data_manager.modify_object(obj_id, new_data):
+                    self.parent._upsert_object_template(new_data)
                     TTS.cancel()
                     TTS.speak(f"已编辑对象：{new_data.get('name', '')}")
                 else:

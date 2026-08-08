@@ -561,6 +561,8 @@ class MapEditorFrame(wx.Frame):
         TILE_DEFINITIONS = self.tile_definitions.copy()
         self.data_manager.tile_definitions = self.tile_definitions
 
+        self.object_definitions = self.load_object_definitions()
+
         self.selection_start = None
         self.selection_end = None
         self._shift_selecting = False
@@ -902,6 +904,77 @@ class MapEditorFrame(wx.Frame):
             return
         self.map_tile_definitions[tile_id] = copy.deepcopy(tile_info)
         self._sync_tile_definitions()
+
+    def load_object_definitions(self):
+        config_file = "./object_definitions.json"
+        try:
+            if not os.path.exists(config_file):
+                return {}
+            with open(config_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            if not content.strip():
+                return {}
+            data = json.loads(content)
+            if not isinstance(data, dict):
+                return {}
+            return self._normalize_object_definitions(data)
+        except Exception as e:
+            print(f"加载对象模板库时发生错误: {e}")
+            return {}
+
+    def _normalize_object_definitions(self, data):
+        if not isinstance(data, dict):
+            return {}
+        result = {}
+        for key, tmpl in data.items():
+            if not isinstance(tmpl, dict):
+                continue
+            props = tmpl.get("properties", {})
+            try:
+                width = int(tmpl.get("width", TILE_SIZE))
+            except (TypeError, ValueError):
+                width = TILE_SIZE
+            try:
+                height = int(tmpl.get("height", TILE_SIZE))
+            except (TypeError, ValueError):
+                height = TILE_SIZE
+            result[str(key)] = {
+                "name": str(tmpl.get("name", key)),
+                "type": str(tmpl.get("type", "")),
+                "width": width,
+                "height": height,
+                "properties": copy.deepcopy(props) if isinstance(props, dict) else {},
+            }
+        return result
+
+    def _object_to_template(self, obj):
+        try:
+            width = int(obj.get("width", TILE_SIZE))
+        except (TypeError, ValueError):
+            width = TILE_SIZE
+        try:
+            height = int(obj.get("height", TILE_SIZE))
+        except (TypeError, ValueError):
+            height = TILE_SIZE
+        props = obj.get("properties", {})
+        return {
+            "name": str(obj.get("name", "")),
+            "type": str(obj.get("type", "")),
+            "width": width,
+            "height": height,
+            "properties": copy.deepcopy(props) if isinstance(props, dict) else {},
+        }
+
+    def _upsert_object_template(self, obj):
+        name = str(obj.get("name", "")).strip()
+        if not name:
+            return None
+        self.object_definitions[name] = self._object_to_template(obj)
+        return name
+
+    def _save_root_object_definitions(self):
+        with open("./object_definitions.json", "w", encoding="utf-8") as f:
+            json.dump(self.object_definitions, f, ensure_ascii=False, indent=4)
 
     def init_ui(self):
         splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE | wx.SP_BORDER)
@@ -1343,6 +1416,7 @@ class MapEditorFrame(wx.Frame):
         self.map_tile_definitions = {}
         self.root_tile_definitions = self.load_tiled_data()
         self._sync_tile_definitions()
+        self.object_definitions = self.load_object_definitions()
         self.cursor_x = 0
         self.cursor_y = 0
         self.landmarks.clear()
@@ -2173,6 +2247,7 @@ class MapEditorFrame(wx.Frame):
         new_obj["x"] = self.cursor_x * TILE_SIZE
         new_obj["y"] = self.cursor_y * TILE_SIZE
         self.data_manager.add_object(new_obj)
+        self._upsert_object_template(new_obj)
         TTS.cancel()
         TTS.speak(f"已粘贴对象：{new_obj.get('name', '')}")
 
@@ -2183,10 +2258,12 @@ class MapEditorFrame(wx.Frame):
             next_id=self.data_manager.next_object_id,
             default_tile_x=self.cursor_x,
             default_tile_y=self.cursor_y,
+            object_definitions=self.object_definitions,
         )
         if dlg.ShowModal() == wx.ID_OK:
             obj_data = dlg.get_object_data()
             self.data_manager.add_object(obj_data)
+            self._upsert_object_template(obj_data)
             TTS.cancel()
             TTS.speak(f"已添加对象：{obj_data.get('name', '')}")
         dlg.Destroy()
@@ -2203,11 +2280,16 @@ class MapEditorFrame(wx.Frame):
 
         self._silent_status = True
         dlg = ObjectDialog(
-            self, obj_data=obj, is_edit=True, next_id=self.data_manager.next_object_id
+            self,
+            obj_data=obj,
+            is_edit=True,
+            next_id=self.data_manager.next_object_id,
+            object_definitions=self.object_definitions,
         )
         if dlg.ShowModal() == wx.ID_OK:
             new_obj_data = dlg.get_object_data()
             if self.data_manager.modify_object(obj.get("id"), new_obj_data):
+                self._upsert_object_template(new_obj_data)
                 del self._silent_status
                 TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
             else:
@@ -2305,6 +2387,7 @@ class MapEditorFrame(wx.Frame):
             )
             self._sync_tile_definitions()
             TILE_DEFINITIONS = self.tile_definitions.copy()
+            self.object_definitions = self.load_object_definitions()
 
             self.cursor_x = 0
             self.cursor_y = 0
@@ -2401,6 +2484,7 @@ class MapEditorFrame(wx.Frame):
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(json_str)
             self._save_root_tile_definitions()
+            self._save_root_object_definitions()
             return True
         except Exception as e:
             wx.MessageBox(f"保存失败：{str(e)}", "错误", wx.OK | wx.ICON_ERROR)
