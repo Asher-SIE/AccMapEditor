@@ -2190,9 +2190,9 @@ class MapEditorFrame(wx.Frame):
             )
             return
 
-        if dm.destination_has_content(
+        if (paste_w * paste_h > 1 and dm.destination_has_content(
             self.cursor_x, self.cursor_y, paste_w, paste_h
-        ):
+        )):
             result = wx.MessageBox(
                 "目标区域已有内容，是否覆盖？",
                 "确认",
