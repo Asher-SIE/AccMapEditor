@@ -117,8 +117,9 @@ class ModifyObjectCommand(Command):
 
     def undo(self, manager):
         objects = manager.object_layers[self.layer_idx]["objects"]
+        current_id = self.new_data.get("id")
         for i, obj in enumerate(objects):
-            if obj.get("id") == self.obj_id:
+            if obj.get("id") == current_id:
                 objects[i] = self.old_data
                 break
         manager._notify(

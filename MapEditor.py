@@ -1611,6 +1611,28 @@ class MapEditorFrame(wx.Frame):
                 return
 
         if key in arrow_keys:
+            if modifiers == wx.MOD_CONTROL:
+                dm_ctrl = self.data_manager
+                cx, cy = self.cursor_x, self.cursor_y
+                cur = dm_ctrl.map_data[cy][cx]
+                if cur not in (0, "0"):
+                    nx, ny = cx, cy
+                    if key == wx.WXK_RIGHT:
+                        while nx + 1 < dm_ctrl.width and dm_ctrl.map_data[cy][nx + 1] == cur:
+                            nx += 1
+                    elif key == wx.WXK_LEFT:
+                        while nx - 1 >= 0 and dm_ctrl.map_data[cy][nx - 1] == cur:
+                            nx -= 1
+                    elif key == wx.WXK_DOWN:
+                        while ny + 1 < dm_ctrl.height and dm_ctrl.map_data[ny + 1][cx] == cur:
+                            ny += 1
+                    elif key == wx.WXK_UP:
+                        while ny - 1 >= 0 and dm_ctrl.map_data[ny - 1][cx] == cur:
+                            ny -= 1
+                    self._move_grid_cursor(nx, ny)
+                    TTS.cancel()
+                    TTS.speak(self._get_tile_name(nx, ny))
+                    return
             old_x, old_y = self.cursor_x, self.cursor_y
             if key == wx.WXK_LEFT and self.cursor_x > 0:
                 self.cursor_x -= 1
@@ -2185,9 +2207,16 @@ class MapEditorFrame(wx.Frame):
         )
         if dlg.ShowModal() == wx.ID_OK:
             new_obj_data = dlg.get_object_data()
-            self.data_manager.modify_object(obj.get("id"), new_obj_data)
-            del self._silent_status
-            TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
+            if self.data_manager.modify_object(obj.get("id"), new_obj_data):
+                del self._silent_status
+                TTS.speak(f"已编辑对象：{new_obj_data.get('name', '')}")
+            else:
+                del self._silent_status
+                wx.MessageBox(
+                    f"对象ID {new_obj_data.get('id')} 已存在！",
+                    "提示",
+                    wx.OK | wx.ICON_WARNING,
+                )
         else:
             del self._silent_status
         dlg.Destroy()

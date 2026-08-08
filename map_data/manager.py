@@ -211,8 +211,13 @@ class MapDataManager(wx.EvtHandler):
         return True
 
     def modify_object(self, obj_id, new_data):
-        new_data["id"] = obj_id
+        new_id = new_data.get("id", obj_id)
+        if new_id != obj_id and self.find_object_by_id(new_id) is not None:
+            return False
         self.execute(ModifyObjectCommand(0, obj_id, new_data))
+        if new_id >= self.next_object_id:
+            self.next_object_id = new_id + 1
+        return True
 
     def clear_objects(self):
         self.execute(ClearObjectsCommand(0))

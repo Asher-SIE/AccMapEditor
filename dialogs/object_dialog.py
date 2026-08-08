@@ -448,9 +448,20 @@ class ObjectDialog(wx.Dialog):
 
         sizer = wx.BoxSizer(wx.VERTICAL)
 
-        info_sizer = wx.FlexGridSizer(rows=6, cols=2, hgap=5, vgap=5)
+        info_sizer = wx.FlexGridSizer(rows=7, cols=2, hgap=5, vgap=5)
 
-        info_sizer.Add(wx.StaticText(self, label="对象ID/名称："))
+        info_sizer.Add(wx.StaticText(self, label="对象ID："))
+        self.id_input = wx.SpinCtrl(
+            self,
+            value=str(self.obj_data.get("id", self.next_id)),
+            min=1,
+            max=999999,
+        )
+        if not is_edit:
+            self.id_input.Disable()
+        info_sizer.Add(self.id_input, 1, wx.EXPAND)
+
+        info_sizer.Add(wx.StaticText(self, label="对象名称："))
         self.name_input = wx.TextCtrl(self, value=self.obj_data.get("name", ""))
         info_sizer.Add(self.name_input, 1, wx.EXPAND)
 
@@ -527,7 +538,7 @@ class ObjectDialog(wx.Dialog):
         tile_h = self.tile_h_input.GetValue()
 
         obj = {
-            "id": self.obj_data.get("id", self.next_id),
+            "id": self.id_input.GetValue(),
             "name": self.name_input.GetValue().strip(),
             "type": self.type_input.GetValue().strip(),
             "x": tile_x * self.TILE_SIZE,
