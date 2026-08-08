@@ -1704,8 +1704,6 @@ class MapEditorFrame(wx.Frame):
                         while ny - 1 >= 0 and dm_ctrl.map_data[ny - 1][cx] == cur:
                             ny -= 1
                     self._move_grid_cursor(nx, ny)
-                    TTS.cancel()
-                    TTS.speak(self._get_tile_name(nx, ny))
                     return
             old_x, old_y = self.cursor_x, self.cursor_y
             if key == wx.WXK_LEFT and self.cursor_x > 0:
