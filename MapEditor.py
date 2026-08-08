@@ -1055,6 +1055,7 @@ class MapEditorFrame(wx.Frame):
                 return
             if self.load_from_tiled_json(info["path"]):
                 self.current_file = info["path"]
+                self._restore_landmarks()
                 self._mark_map_clean()
                 self.update_title()
                 self.main_book.SetSelection(0)
@@ -1153,6 +1154,8 @@ class MapEditorFrame(wx.Frame):
             )
         clear_landmarks_item = landmark_menu.Append(wx.ID_ANY, f"清理\t{mod}+`")
         self._map_menu_items.append(clear_landmarks_item)
+        landmark_menu.AppendSeparator()
+        delete_all_landmarks_item = landmark_menu.Append(wx.ID_ANY, "删除所有路标数据")
         landmark_submenu = edit_menu.AppendSubMenu(landmark_menu, "路标")
         self._map_menu_items.append(landmark_submenu)
         edit_menu.AppendSeparator()
@@ -1226,6 +1229,7 @@ class MapEditorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.paste_clipboard, paste_item)
         self.Bind(wx.EVT_MENU, self.on_goto_cell, goto_item)
         self.Bind(wx.EVT_MENU, self._clear_landmarks, clear_landmarks_item)
+        self.Bind(wx.EVT_MENU, self._delete_all_landmarks_data, delete_all_landmarks_item)
         self.Bind(wx.EVT_MENU, self.on_add_object, add_object_item)
         self.Bind(wx.EVT_MENU, self.on_edit_object, edit_object_item)
         self.Bind(wx.EVT_MENU, self.on_delete_object, delete_object_item)
@@ -1618,12 +1622,14 @@ class MapEditorFrame(wx.Frame):
 
     def _add_landmark(self, index):
         self.landmarks[index] = (self.cursor_x, self.cursor_y)
+        self._persist_landmarks()
         tile_name = self._get_tile_name(self.cursor_x, self.cursor_y)
         TTS.cancel()
         TTS.speak(f"已添加 {tile_name}，{self.cursor_x}，{self.cursor_y}")
 
     def _clear_landmarks(self, event=None):
         self.landmarks.clear()
+        self._persist_landmarks()
         TTS.cancel()
         TTS.speak("已清理所有路标")
 
@@ -1637,10 +1643,56 @@ class MapEditorFrame(wx.Frame):
         dm = self.data_manager
         if not (0 <= x < dm.width and 0 <= y < dm.height):
             self.landmarks.pop(index, None)
+            self._persist_landmarks()
             TTS.cancel()
             TTS.speak("路标已超出范围")
             return
         self._move_grid_cursor(x, y)
+
+    def _persist_landmarks(self):
+        if not self.current_file:
+            return
+        name = os.path.basename(self.current_file)
+        store = self.editor_config.setdefault("landmarks", {})
+        store[name] = {
+            str(idx): [x, y] for idx, (x, y) in self.landmarks.items()
+        }
+        self._save_editor_config()
+
+    def _restore_landmarks(self):
+        self.landmarks.clear()
+        if not self.current_file:
+            return
+        name = os.path.basename(self.current_file)
+        store = self.editor_config.get("landmarks", {})
+        for k, v in store.get(name, {}).items():
+            try:
+                self.landmarks[int(k)] = (int(v[0]), int(v[1]))
+            except Exception:
+                continue
+        if hasattr(self, "grid"):
+            self.grid.ForceRefresh()
+
+    def _delete_all_landmarks_data(self, event):
+        store = self.editor_config.get("landmarks", {})
+        if not store:
+            wx.MessageBox("没有已存储的路标数据。", "删除所有路标数据", wx.OK)
+            return
+        map_count = len(store)
+        mark_count = sum(len(v) for v in store.values())
+        confirm = wx.MessageBox(
+            f"确定删除所有地图的路标数据吗？\n共 {map_count} 个地图，{mark_count} 个路标。\n此操作不可撤销。",
+            "删除所有路标数据",
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING,
+        )
+        if confirm == wx.YES:
+            self.editor_config.pop("landmarks", None)
+            self.landmarks.clear()
+            self._save_editor_config()
+            if hasattr(self, "grid"):
+                self.grid.ForceRefresh()
+            TTS.cancel()
+            TTS.speak("已删除所有路标数据")
 
     def on_goto_cell(self, event):
         dlg = wx.TextEntryDialog(
@@ -2357,6 +2409,7 @@ class MapEditorFrame(wx.Frame):
                 filepath = dlg.GetPath()
                 if self.load_from_tiled_json(filepath):
                     self.current_file = filepath
+                    self._restore_landmarks()
                     self._mark_map_clean()
                     self.update_title()
 
