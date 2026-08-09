@@ -124,7 +124,7 @@ class JsonDataManager:
             )
             + self._orig_trailing
         )
-        with open(self.filepath, "w", encoding="utf-8") as f:
+        with open(self.filepath, "w", encoding="utf-8", newline="") as f:
             f.write(text)
         self.mark_clean()
         return True

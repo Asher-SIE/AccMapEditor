@@ -523,7 +523,7 @@ class CustomTileDialog(wx.Frame):
         dlg.Destroy()
 
     def on_save(self, event):
-        with open("./tile_definitions.json", "w", encoding="utf-8") as f:
+        with open("./tile_definitions.json", "w", encoding="utf-8", newline="") as f:
             json.dump(self.tile_data, f, ensure_ascii=False, indent=4)
         wx.MessageBox("保存成功！", "提示", wx.OK)
         self.notify_parent()
@@ -723,7 +723,7 @@ class MapEditorFrame(wx.Frame):
 
     def _save_editor_config(self):
         try:
-            with open("./editor_config.json", "w", encoding="utf-8") as f:
+            with open("./editor_config.json", "w", encoding="utf-8", newline="") as f:
                 json.dump(self.editor_config, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
@@ -752,7 +752,7 @@ class MapEditorFrame(wx.Frame):
         try:
             if not os.path.exists(config_file):
                 print(f"配置文件不存在，创建新文件: {config_file}")
-                with open(config_file, "w", encoding="utf-8") as f:
+                with open(config_file, "w", encoding="utf-8", newline="") as f:
                     json.dump(default_config, f, ensure_ascii=False, indent=4)
                 print("已创建默认配置文件")
                 return default_config
@@ -762,7 +762,7 @@ class MapEditorFrame(wx.Frame):
 
                 if not content.strip():
                     print("配置文件为空，创建默认配置")
-                    with open(config_file, "w", encoding="utf-8") as f_write:
+                    with open(config_file, "w", encoding="utf-8", newline="") as f_write:
                         json.dump(default_config, f_write, ensure_ascii=False, indent=4)
                     print(" 已填充默认配置")
                     return default_config
@@ -910,7 +910,7 @@ class MapEditorFrame(wx.Frame):
 
     def _save_root_tile_definitions(self):
         root_defs = self._get_root_tile_definitions_for_save()
-        with open("./tile_definitions.json", "w", encoding="utf-8") as f:
+        with open("./tile_definitions.json", "w", encoding="utf-8", newline="") as f:
             json.dump(root_defs, f, ensure_ascii=False, indent=4)
         self.root_tile_definitions = root_defs
         self._sync_tile_definitions()
@@ -991,7 +991,7 @@ class MapEditorFrame(wx.Frame):
         return name
 
     def _save_root_object_definitions(self):
-        with open("./object_definitions.json", "w", encoding="utf-8") as f:
+        with open("./object_definitions.json", "w", encoding="utf-8", newline="") as f:
             json.dump(self.object_definitions, f, ensure_ascii=False, indent=4)
 
     def init_ui(self):
@@ -2601,7 +2601,7 @@ class MapEditorFrame(wx.Frame):
 
             json_str = format_impassable_section(json_str)
 
-            with open(filepath, "w", encoding="utf-8") as f:
+            with open(filepath, "w", encoding="utf-8", newline="") as f:
                 f.write(json_str)
             self._save_root_tile_definitions()
             self._save_root_object_definitions()
